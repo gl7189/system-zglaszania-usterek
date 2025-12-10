@@ -7,14 +7,15 @@ export enum UrgencyLevel {
 export enum IssueCategory {
   ELECTRIC = 'Instalacja elektryczna (brak prądu, awaria)',
   PLUMBING = 'Wodno-kanalizacyjna (wycieki, zatory)',
-  HVAC = 'Ogrzewanie i Wentylacja',
+  HVAC = 'Ogrzewanie i wentylacja',
   ELEVATOR = 'Winda',
-  GATE_GARAGE = 'Brama wjazdowa / Garażowa',
-  WINDOWS_DOORS = 'Stolarka (Okna i Drzwi)',
-  WALLS_CEILINGS = 'Konstrukcja (Ściany, Sufity, Elewacja)',
+  GATE_GARAGE = 'Furtka / Brama wjazdowa / Garażowa',
+  WINDOWS = 'Okna',
+  DOORS = 'Drzwi (Do klatek / garażu)',
+  WALLS_CEILINGS = 'Konstrukcja (Ściany, sufity, elewacja)',
   ROOF = 'Dach i Rynny',
   CLEANING = 'Czystość i Porządek',
-  INTERCOM = 'Domofon i Kontrola dostępu',
+  INTERCOM = 'Domofon',
   LIGHTING = 'Oświetlenie części wspólnych',
   OTHER = 'Inne zgłoszenie'
 }

@@ -1,7 +1,6 @@
 import React from 'react';
 import { IssueForm } from './components/IssueForm';
 import { APP_CONFIG } from './config';
-import { Building2 } from 'lucide-react';
 
 export default function App() {
   return (
@@ -10,17 +9,12 @@ export default function App() {
         {/* Header */}
         <div className="max-w-3xl mx-auto mb-8 text-center">
           
-          {/* 
-             MIEJSCE NA LOGO 
-             Zalecane wymiary: Wysokość 64px - 128px. 
-             Jeśli masz plik, wgraj go np. na ImgBB i wklej link poniżej w src.
-          */}
-          {/* <img src="https://twoja-domena.pl/logo.png" alt="Logo Wspólnoty" className="h-16 mx-auto mb-4" /> */}
-
-          {/* Domyślne logo (ikona) */}
-          <div className="inline-flex items-center justify-center p-4 bg-white rounded-2xl shadow-sm mb-4">
-             <Building2 className="w-10 h-10 text-blue-600" />
-          </div>
+          {/* Logo Wspólnoty */}
+          <img 
+            src="https://i.ibb.co/0j3f54wt/logo-sgu.png" 
+            alt="Logo Wspólnoty - Aleja Śliwowa" 
+            className="h-24 mx-auto mb-6 object-contain" 
+          />
 
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">System Zgłaszania Usterek</h1>
           <p className="text-slate-600 mt-2 text-lg">Aleja Śliwowa 26-32</p>

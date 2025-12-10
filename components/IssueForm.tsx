@@ -42,6 +42,7 @@ export const IssueForm: React.FC<any> = () => {
     if (!formState.location.trim()) { newErrors.location = 'Wymagane'; isValid = false; }
     if (!formState.category) { newErrors.category = 'Wymagane'; isValid = false; }
     
+    // Zmieniono limit minimalny na 10 znaków
     if (formState.description.length < 10) { newErrors.description = 'Min. 10 znaków'; isValid = false; }
     if (formState.description.length > 1000) { newErrors.description = 'Max. 1000 znaków'; isValid = false; }
 
