@@ -1,12 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
-  Wrench, Sparkles, Loader2, Link as LinkIcon 
+  Wrench, Link as LinkIcon, Loader2 
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
 import { APP_CONFIG } from '../config';
-import { improveDescription } from '../services/geminiService';
 
 // Limit rozmiaru przed wysłaniem na ImgBB (dla wydajności) - 5MB
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
@@ -19,17 +18,17 @@ export const IssueForm: React.FC<any> = () => {
     category: '',
     urgency: UrgencyLevel.NORMAL,
     description: '',
-    photos: [] // Używamy tylko do podglądu lokalnego
+    photos: []
   });
 
-  // Stan przechowujący URL do zdjęcia na serwerze
+  // Stan dla Honeypot (Pułapka na boty)
+  const [honeyPot, setHoneyPot] = useState('');
+
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string>('');
-  
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [isImproving, setIsImproving] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -43,13 +42,11 @@ export const IssueForm: React.FC<any> = () => {
     if (!formState.location.trim()) { newErrors.location = 'Wymagane'; isValid = false; }
     if (!formState.category) { newErrors.category = 'Wymagane'; isValid = false; }
     
-    // Zmieniono limit minimalny na 10 znaków
     if (formState.description.length < 10) { newErrors.description = 'Min. 10 znaków'; isValid = false; }
     if (formState.description.length > 1000) { newErrors.description = 'Max. 1000 znaków'; isValid = false; }
 
-    // Sprawdź czy klucz API jest skonfigurowany, jeśli użytkownik dodaje zdjęcie
     if (formState.photos.length > 0 && (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey === 'YOUR_IMGBB_API_KEY_HERE')) {
-        alert("Błąd konfiguracji: Brak klucza API ImgBB w pliku config.ts. Zdjęcia nie będą działać.");
+        alert("Błąd konfiguracji: Brak klucza API ImgBB w pliku config.ts.");
         isValid = false;
     }
 
@@ -57,26 +54,10 @@ export const IssueForm: React.FC<any> = () => {
     return isValid;
   };
 
-  const handleImproveDescription = async () => {
-    if (formState.description.length < 5) return;
-    setIsImproving(true);
-    try {
-      const improved = await improveDescription(formState.description);
-      setFormState(prev => ({ ...prev, description: improved }));
-      setErrors(prev => ({ ...prev, description: undefined }));
-    } catch (error) {
-      console.error(error);
-      alert("Nie udało się połączyć z AI.");
-    } finally {
-      setIsImproving(false);
-    }
-  };
-
   const uploadToImgBB = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('image', file);
     
-    // Usuwamy 'YOUR_IMGBB_API_KEY_HERE' jeśli użytkownik zapomniał zmienić, żeby request od razu padł z jasnym błędem
     const apiKey = APP_CONFIG.imgbbApiKey;
     
     const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
@@ -86,7 +67,7 @@ export const IssueForm: React.FC<any> = () => {
 
     const data = await response.json();
     if (data.success) {
-      return data.data.url; // Bezpośredni link do obrazka
+      return data.data.url;
     } else {
       throw new Error(data.error?.message || 'Błąd uploadu');
     }
@@ -103,10 +84,8 @@ export const IssueForm: React.FC<any> = () => {
 
     setIsUploading(true);
     try {
-        // 1. Pokaż podgląd lokalnie
         setFormState(prev => ({ ...prev, photos: [file] }));
 
-        // 2. Wyślij na serwer ImgBB
         if (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey.includes('YOUR_IMGBB')) {
             throw new Error("Brak klucza API ImgBB w konfiguracji.");
         }
@@ -118,7 +97,6 @@ export const IssueForm: React.FC<any> = () => {
     } catch (err: any) {
         console.error("Upload error:", err);
         alert(`Nie udało się wgrać zdjęcia: ${err.message}`);
-        // Cofnij wybór
         setFormState(prev => ({ ...prev, photos: [] }));
         setUploadedPhotoUrl('');
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -135,6 +113,16 @@ export const IssueForm: React.FC<any> = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // --- OCHRONA ANTYSPAMOWA (HONEYPOT) ---
+    // Jeśli pole pułapki jest wypełnione, udajemy sukces, ale nic nie wysyłamy.
+    if (honeyPot) {
+      console.log("Bot detected. Silently ignoring.");
+      setSubmitStatus('success'); 
+      return;
+    }
+    // --------------------------------------
+
     if (!validate()) return;
     if (!formRef.current) return;
 
@@ -147,9 +135,6 @@ export const IssueForm: React.FC<any> = () => {
     setSubmitStatus('idle');
 
     try {
-      // EmailJS wysyła formularz. 
-      // Link zostanie dołączony do pola 'message' (patrz hidden input poniżej),
-      // więc pojawi się w treści maila nawet jeśli szablon nie obsługuje 'attachment_link'.
       await emailjs.sendForm(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
@@ -160,7 +145,6 @@ export const IssueForm: React.FC<any> = () => {
       console.log("=== SUKCES EMAILJS ===");
       setSubmitStatus('success');
       
-      // Reset form
       setFormState({
         senderName: '', senderEmail: '', location: '', category: '',
         urgency: UrgencyLevel.NORMAL, description: '', photos: []
@@ -210,14 +194,22 @@ export const IssueForm: React.FC<any> = () => {
         </div>
 
         <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* HONEYPOT FIELD - Niewidoczne dla użytkownika, widoczne dla bota */}
+          <div className="hidden" aria-hidden="true">
+            <input 
+              type="text" 
+              name="website_url_check" 
+              value={honeyPot}
+              onChange={(e) => setHoneyPot(e.target.value)}
+              tabIndex={-1} 
+              autoComplete="off"
+            />
+          </div>
+
           <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
           <input type="hidden" name="name" value={formState.senderName} />
           <input type="hidden" name="email" value={formState.senderEmail} />
-          
-          {/* FIX: Łączymy opis i link w jedno pole 'message', bo szablon EmailJS prawdopodobnie używa tylko {{message}} */}
           <input type="hidden" name="message" value={`${formState.description}${uploadedPhotoUrl ? `\n\n--- ZDJĘCIE USTERKI ---\n${uploadedPhotoUrl}` : ''}`} />
-          
-          {/* Opcjonalnie wysyłamy link osobno, gdyby szablon został zaktualizowany o {{attachment_link}} */}
           <input type="hidden" name="attachment_link" value={uploadedPhotoUrl} />
 
           {/* Dane osobowe */}
@@ -301,11 +293,7 @@ export const IssueForm: React.FC<any> = () => {
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-sm font-medium text-slate-700">Opis</label>
-              <button type="button" onClick={handleImproveDescription} disabled={isImproving || formState.description.length < 5} className="text-xs text-purple-600 flex items-center gap-1">
-                {isImproving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} AI
-              </button>
             </div>
-            {/* Pole tekstowe bez atrybutu name, aby nie nadpisywało naszego hidden inputa 'message' */}
             <textarea 
               value={formState.description} 
               onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
