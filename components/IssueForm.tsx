@@ -8,8 +8,57 @@ import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '.
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-const MAX_FILE_SIZE_MB = 2;
+const MAX_FILE_SIZE_MB = 10; // Allow larger initial selection, we will compress it
 const MAX_FILES = 2;
+
+// Helper to compress images
+const compressImage = (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject('No canvas context');
+
+        // Calculate new dimensions (max 1600px)
+        const MAX_DIM = 1600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height *= MAX_DIM / width;
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width *= MAX_DIM / height;
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          if (!blob) return reject('Compression failed');
+          const compressedFile = new File([blob], file.name, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+          resolve(compressedFile);
+        }, 'image/jpeg', 0.7); // 70% quality
+      };
+      img.onerror = (error) => reject(error);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
 
 export const IssueForm: React.FC<any> = () => {
   const [formState, setFormState] = useState<IssueFormState>({
@@ -24,6 +73,7 @@ export const IssueForm: React.FC<any> = () => {
 
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isImproving, setIsImproving] = useState(false);
   
@@ -68,24 +118,31 @@ export const IssueForm: React.FC<any> = () => {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
     if (files.length + formState.photos.length > MAX_FILES) {
       alert(`Maksymalnie ${MAX_FILES} zdjęcia w wersji darmowej.`);
       return;
     }
 
-    const validFiles = files.filter(file => {
-      const isValidSize = file.size <= MAX_FILE_SIZE_MB * 1024 * 1024;
-      const isValidType = ['image/jpeg', 'image/png'].includes(file.type);
-      return isValidSize && isValidType;
-    });
+    setIsCompressing(true);
+    try {
+      const validFiles = files.filter(file => {
+        // Only accept images
+        return ['image/jpeg', 'image/png', 'image/heic'].some(type => file.type.includes('image'));
+      });
 
-    if (validFiles.length !== files.length) {
-      alert(`Pominięto pliki > ${MAX_FILE_SIZE_MB}MB lub nieprawidłowy format.`);
+      const compressedFiles = await Promise.all(validFiles.map(file => compressImage(file)));
+
+      setFormState(prev => ({ ...prev, photos: [...prev.photos, ...compressedFiles] }));
+    } catch (err) {
+      console.error("Compression error:", err);
+      alert("Błąd przetwarzania zdjęcia.");
+    } finally {
+      setIsCompressing(false);
+      // Reset input value to allow selecting the same file again if needed
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-
-    setFormState(prev => ({ ...prev, photos: [...prev.photos, ...validFiles] }));
   };
 
   const removePhoto = (index: number) => {
@@ -101,9 +158,9 @@ export const IssueForm: React.FC<any> = () => {
     setSubmitStatus('idle');
 
     try {
-      // Używamy sendForm zamiast send, aby poprawnie obsłużyć załączniki
-      // i uniknąć błędu 413 (zbyt duży payload JSON).
+      // Używamy sendForm zamiast send, aby poprawnie obsłużyć załączniki.
       // Dane są pobierane z atrybutów 'name' w formularzu.
+      // Dzięki useEffect i DataTransfer, załączone pliki są już skompresowane.
       await emailjs.sendForm(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
@@ -119,7 +176,7 @@ export const IssueForm: React.FC<any> = () => {
       });
     } catch (error) {
       console.error('FAILED...', error);
-      alert("Błąd wysyłania zgłoszenia. Spróbuj ponownie później.");
+      alert("Błąd wysyłania zgłoszenia. Sprawdź konfigurację EmailJS.");
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -160,8 +217,13 @@ export const IssueForm: React.FC<any> = () => {
         </div>
 
         <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Ukryte pole dla emaila odbiorcy */}
+          {/* KONFIGURACJA DLA EMAILJS */}
+          {/* Adres odbiorcy z config.ts -> w EmailJS ustaw "To Email" na {{to_email}} */}
           <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
+          
+          {/* Dodatkowe pola ukryte, aby pasowały do domyślnych nagłówków EmailJS {{name}} i {{email}} */}
+          <input type="hidden" name="name" value={formState.senderName} />
+          <input type="hidden" name="email" value={formState.senderEmail} />
 
           {/* Dane osobowe */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -169,7 +231,7 @@ export const IssueForm: React.FC<any> = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">Nadawca</label>
               <input 
                 type="text" 
-                name="from_name" // Ważne dla EmailJS
+                name="from_name" 
                 value={formState.senderName} 
                 onChange={e => setFormState(prev => ({ ...prev, senderName: e.target.value }))} 
                 className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
@@ -181,7 +243,7 @@ export const IssueForm: React.FC<any> = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
               <input 
                 type="email" 
-                name="from_email" // Ważne dla EmailJS
+                name="from_email" 
                 value={formState.senderEmail} 
                 onChange={e => setFormState(prev => ({ ...prev, senderEmail: e.target.value }))} 
                 className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
@@ -197,7 +259,7 @@ export const IssueForm: React.FC<any> = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">Miejsce</label>
               <input 
                 type="text" 
-                name="location" // Ważne dla EmailJS
+                name="location" 
                 value={formState.location} 
                 onChange={e => setFormState(prev => ({ ...prev, location: e.target.value }))} 
                 className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
@@ -208,7 +270,7 @@ export const IssueForm: React.FC<any> = () => {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Kategoria</label>
               <select 
-                name="category" // Ważne dla EmailJS
+                name="category" 
                 value={formState.category} 
                 onChange={e => setFormState(prev => ({ ...prev, category: e.target.value as IssueCategory }))} 
                 className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2"
@@ -228,7 +290,7 @@ export const IssueForm: React.FC<any> = () => {
                 <label key={level} className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border ${formState.urgency === level ? urgencyColor[level] : 'border-slate-200 bg-white'} hover:bg-slate-50`}>
                   <input 
                     type="radio" 
-                    name="urgency" // Ważne dla EmailJS
+                    name="urgency" 
                     value={level} 
                     checked={formState.urgency === level} 
                     onChange={() => setFormState(prev => ({ ...prev, urgency: level }))} 
@@ -249,7 +311,7 @@ export const IssueForm: React.FC<any> = () => {
               </button>
             </div>
             <textarea 
-              name="message" // Ważne dla EmailJS
+              name="message" 
               value={formState.description} 
               onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
               rows={5} 
@@ -261,31 +323,42 @@ export const IssueForm: React.FC<any> = () => {
           {/* Zdjęcia */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcia (maks. 2)</label>
-            <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => fileInputRef.current?.click()}>
-              {/* Input file jest ukryty, ale używany przez sendForm. Zsynchronizowany przez useEffect. */}
+            <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isCompressing ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isCompressing && fileInputRef.current?.click()}>
               <input 
                 type="file" 
-                name="my_photo" // Nazwa musi pasować do parametru załącznika w EmailJS (zwykle automatyczne)
+                name="my_photo" 
                 ref={fileInputRef} 
                 onChange={handleFileChange} 
                 accept="image/png, image/jpeg" 
                 multiple 
                 className="hidden" 
               />
-              <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-              <p className="text-sm mt-2 text-slate-600">Kliknij by dodać (max 2MB)</p>
+              {isCompressing ? (
+                 <div className="flex flex-col items-center">
+                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+                    <p className="text-sm mt-2 text-blue-600">Przetwarzanie zdjęć...</p>
+                 </div>
+              ) : (
+                <>
+                  <Upload className="w-8 h-8 text-slate-400 mx-auto" />
+                  <p className="text-sm mt-2 text-slate-600">Kliknij by dodać (automatyczna kompresja)</p>
+                </>
+              )}
             </div>
             <div className="mt-2 grid grid-cols-2 gap-4">
               {formState.photos.map((file, i) => (
-                <div key={i} className="relative aspect-video bg-slate-100 rounded border flex items-center justify-center">
+                <div key={i} className="relative aspect-video bg-slate-100 rounded border flex items-center justify-center group">
                   <img src={URL.createObjectURL(file)} alt="" className="h-full object-contain" />
                   <button type="button" onClick={(e) => {e.stopPropagation(); removePhoto(i)}} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"><X className="w-3 h-3"/></button>
+                  <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1 rounded">
+                    {(file.size / 1024).toFixed(0)}KB
+                  </span>
                 </div>
               ))}
             </div>
           </div>
 
-          <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors">
+          <button type="submit" disabled={isSubmitting || isCompressing} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
             {isSubmitting ? <Loader2 className="animate-spin" /> : <Send />} Wyślij zgłoszenie
           </button>
         </form>
