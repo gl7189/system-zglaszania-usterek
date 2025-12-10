@@ -1,15 +1,15 @@
 export enum UrgencyLevel {
   NORMAL = 'Normalna',
   URGENT = 'Pilna',
-  EMERGENCY = 'Awaryjna (Zagrożenie życia/mienia)'
+  EMERGENCY = 'Awaryjna'
 }
 
 export enum IssueCategory {
   ELECTRIC = 'Instalacja elektryczna (brak prądu, awaria)',
   PLUMBING = 'Wodno-kanalizacyjna (wycieki, zatory)',
   HVAC = 'Ogrzewanie i Wentylacja',
-  ELEVATOR = 'Winda / Dźwig osobowy',
-  GATE_GARAGE = 'Brama wjazdowa / Garaż',
+  ELEVATOR = 'Winda',
+  GATE_GARAGE = 'Brama wjazdowa / Garażowa',
   WINDOWS_DOORS = 'Stolarka (Okna i Drzwi)',
   WALLS_CEILINGS = 'Konstrukcja (Ściany, Sufity, Elewacja)',
   ROOF = 'Dach i Rynny',

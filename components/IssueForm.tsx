@@ -42,7 +42,10 @@ export const IssueForm: React.FC<any> = () => {
     if (!formState.senderEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) { newErrors.senderEmail = 'Błędny email'; isValid = false; }
     if (!formState.location.trim()) { newErrors.location = 'Wymagane'; isValid = false; }
     if (!formState.category) { newErrors.category = 'Wymagane'; isValid = false; }
-    if (formState.description.length < 20) { newErrors.description = 'Min. 20 znaków'; isValid = false; }
+    
+    // Zmieniono limit minimalny na 10 znaków
+    if (formState.description.length < 10) { newErrors.description = 'Min. 10 znaków'; isValid = false; }
+    if (formState.description.length > 1000) { newErrors.description = 'Max. 1000 znaków'; isValid = false; }
 
     // Sprawdź czy klucz API jest skonfigurowany, jeśli użytkownik dodaje zdjęcie
     if (formState.photos.length > 0 && (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey === 'YOUR_IMGBB_API_KEY_HERE')) {
@@ -255,7 +258,7 @@ export const IssueForm: React.FC<any> = () => {
                 value={formState.location} 
                 onChange={e => setFormState(prev => ({ ...prev, location: e.target.value }))} 
                 className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
-                placeholder="np. Klatka B" 
+                placeholder="np. klatka 26" 
               />
               {errors.location && <p className="text-red-500 text-xs">{errors.location}</p>}
             </div>
@@ -307,6 +310,7 @@ export const IssueForm: React.FC<any> = () => {
               value={formState.description} 
               onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
               rows={5} 
+              maxLength={1000}
               className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
             />
             {errors.description && <p className="text-red-500 text-xs">{errors.description}</p>}

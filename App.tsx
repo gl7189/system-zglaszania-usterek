@@ -10,16 +10,20 @@ export default function App() {
         {/* Header */}
         <div className="max-w-3xl mx-auto mb-8 text-center">
           
-          {/* OPCJA 1: Jeśli masz plik z logo (np. URL do ImgBB lub w folderze public), odkomentuj poniższe: */}
+          {/* 
+             MIEJSCE NA LOGO 
+             Zalecane wymiary: Wysokość 64px - 128px. 
+             Jeśli masz plik, wgraj go np. na ImgBB i wklej link poniżej w src.
+          */}
           {/* <img src="https://twoja-domena.pl/logo.png" alt="Logo Wspólnoty" className="h-16 mx-auto mb-4" /> */}
 
-          {/* OPCJA 2: Logo oparte na ikonie (Domyślne) */}
+          {/* Domyślne logo (ikona) */}
           <div className="inline-flex items-center justify-center p-4 bg-white rounded-2xl shadow-sm mb-4">
              <Building2 className="w-10 h-10 text-blue-600" />
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Portal Zgłoszeniowy</h1>
-          <p className="text-slate-600 mt-2 text-lg">Zarządzanie Nieruchomościami i Obsługa Techniczna</p>
+          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">System Zgłaszania Usterek</h1>
+          <p className="text-slate-600 mt-2 text-lg">Aleja Śliwowa 26-32</p>
         </div>
 
         {/* Main Content */}
@@ -31,14 +35,9 @@ export default function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-6 mt-auto">
         <div className="max-w-3xl mx-auto px-4 text-center">
-          <p className="text-sm text-slate-500 mb-2">
-            &copy; {new Date().getFullYear()} Administracja Budynku "Wspólnota". Wszystkie prawa zastrzeżone.
+          <p className="text-sm text-slate-500">
+            &copy; 2025 Zarząd Wspólnoty Mieszkaniowej Aleja Śliwowa 26-32. Wszystkie prawa zastrzeżone.
           </p>
-          <div className="text-xs text-slate-400 space-x-4">
-            <a href="#" className="hover:text-slate-600 transition-colors">Regulamin</a>
-            <a href="#" className="hover:text-slate-600 transition-colors">Polityka Prywatności</a>
-            <a href="#" className="hover:text-slate-600 transition-colors">Kontakt</a>
-          </div>
         </div>
       </footer>
     </div>
