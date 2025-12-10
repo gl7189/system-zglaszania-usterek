@@ -8,12 +8,11 @@ import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '.
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-// EmailJS Free Tier ma limit 50KB na całe żądanie.
-// Kodowanie Base64 zwiększa rozmiar pliku o ~33%.
-// 16KB plik -> ~21.5KB Base64.
-// Przy 2 plikach mamy ~43KB + treść formularza = ~45-48KB (na styk).
-const MAX_FILE_SIZE_BYTES = 16 * 1024; 
-const MAX_FILES = 2;
+// EmailJS Free Tier ma limit 50KB.
+// Zmniejszamy limit do 12KB i TYLKO 1 PLIKU.
+// To jedyny sposób, aby załącznik przeszedł w darmowej wersji.
+const MAX_FILE_SIZE_BYTES = 12 * 1024; 
+const MAX_FILES = 1; // Zmiana na 1 plik dla bezpieczeństwa
 
 // Helper to compress images iteratively until they fit the size limit
 const compressImageToSize = (file: File): Promise<File> => {
@@ -26,13 +25,11 @@ const compressImageToSize = (file: File): Promise<File> => {
       img.onload = async () => {
         let width = img.width;
         let height = img.height;
-        let quality = 0.8;
+        let quality = 0.7; // Start lower
         let blob: Blob | null = null;
         
-        // Start optimization loop
-        // We start by drastically reducing dimensions if it's a huge photo
-        // For 15KB target, we need small dimensions, start around 600px
-        const START_MAX_DIM = 600; 
+        // Drastyczna redukcja wymiarów na start dla małego pliku
+        const START_MAX_DIM = 500; 
         if (width > height) {
            if (width > START_MAX_DIM) {
               height *= START_MAX_DIM / width;
@@ -47,7 +44,7 @@ const compressImageToSize = (file: File): Promise<File> => {
 
         const canvas = document.createElement('canvas');
         let attempts = 0;
-        const maxAttempts = 15; // More attempts allowed
+        const maxAttempts = 15;
 
         while (attempts < maxAttempts) {
           canvas.width = width;
@@ -59,40 +56,36 @@ const compressImageToSize = (file: File): Promise<File> => {
              return;
           }
 
-          // Draw white background (for transparency handling if png)
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Convert to blob
           blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', quality));
 
           if (blob && blob.size <= MAX_FILE_SIZE_BYTES) {
-            break; // Success!
+            break;
           }
 
-          // If too big, reduce dimensions and quality aggressively
           width *= 0.8; 
           height *= 0.8;
-          quality = Math.max(0.3, quality - 0.1); 
+          quality = Math.max(0.2, quality - 0.1); 
           attempts++;
         }
 
         if (blob) {
-          console.log(`Compressed to: ${(blob.size / 1024).toFixed(2)} KB after ${attempts} attempts`);
+          console.log(`Skompresowano: ${(blob.size / 1024).toFixed(2)} KB (próba ${attempts})`);
           const compressedFile = new File([blob], file.name, {
             type: 'image/jpeg',
             lastModified: Date.now(),
           });
           resolve(compressedFile);
         } else {
-          // If we failed to compress enough, we might need to reject or return the smallest we got
-          // For now, let's return what we have but warn in console
+          // Fallback: zwróć ostatni wynik nawet jak jest ciut za duży
           if (blob) {
              const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
              resolve(compressedFile);
           } else {
-             reject('Compression failed');
+             reject('Błąd kompresji');
           }
         }
       };
@@ -122,7 +115,6 @@ export const IssueForm: React.FC<any> = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Sync React state photos with the native file input for sendForm
   useEffect(() => {
     if (fileInputRef.current) {
       const dataTransfer = new DataTransfer();
@@ -154,7 +146,7 @@ export const IssueForm: React.FC<any> = () => {
       setErrors(prev => ({ ...prev, description: undefined }));
     } catch (error) {
       console.error(error);
-      alert("Nie udało się połączyć z AI. Sprawdź czy klucz API jest skonfigurowany.");
+      alert("Nie udało się połączyć z AI.");
     } finally {
       setIsImproving(false);
     }
@@ -162,27 +154,32 @@ export const IssueForm: React.FC<any> = () => {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
+    
+    // Zablokuj dodawanie jeśli już jest zdjęcie
     if (files.length + formState.photos.length > MAX_FILES) {
-      alert(`Maksymalnie ${MAX_FILES} zdjęcia w wersji darmowej.`);
+      alert(`W wersji darmowej można dodać maksymalnie ${MAX_FILES} zdjęcie.`);
       return;
     }
 
     setIsCompressing(true);
     try {
       const validFiles = files.filter(file => {
-        // Only accept images
         return ['image/jpeg', 'image/png', 'image/heic'].some(type => file.type.includes('image'));
       });
 
-      const compressedFiles = await Promise.all(validFiles.map(file => compressImageToSize(file)));
+      // Jeśli wybrano więcej niż 1 (np. przeciągnięcie), weź tylko pierwsze
+      const fileToProcess = validFiles[0]; 
+      if (!fileToProcess) return;
 
-      setFormState(prev => ({ ...prev, photos: [...prev.photos, ...compressedFiles] }));
+      const compressedFile = await compressImageToSize(fileToProcess);
+      
+      // Zastąp istniejące (dla pewności, że mamy max 1) lub dodaj
+      setFormState(prev => ({ ...prev, photos: [compressedFile] }));
     } catch (err) {
       console.error("Compression error:", err);
       alert("Błąd przetwarzania zdjęcia.");
     } finally {
       setIsCompressing(false);
-      // Reset input value to allow selecting the same file again if needed
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -196,6 +193,16 @@ export const IssueForm: React.FC<any> = () => {
     if (!validate()) return;
     if (!formRef.current) return;
 
+    // DEBUG LOGS
+    if (fileInputRef.current && fileInputRef.current.files) {
+       console.log("=== DEBUG: WYSYŁANIE ===");
+       console.log(`Input name: ${fileInputRef.current.name}`); // Powinno być my_photo
+       console.log(`Liczba plików: ${fileInputRef.current.files.length}`);
+       if (fileInputRef.current.files.length > 0) {
+         console.log(`Rozmiar: ${(fileInputRef.current.files[0].size/1024).toFixed(2)}KB`);
+       }
+    }
+
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
@@ -207,7 +214,7 @@ export const IssueForm: React.FC<any> = () => {
         APP_CONFIG.publicKey
       );
       
-      console.log("=== EMAIL WYSŁANY PRZEZ EMAILJS ===");
+      console.log("=== SUKCES EMAILJS ===");
       setSubmitStatus('success');
       setFormState({
         senderName: '', senderEmail: '', location: '', category: '',
@@ -217,7 +224,7 @@ export const IssueForm: React.FC<any> = () => {
       console.error('FAILED...', error);
       let msg = "Błąd wysyłania zgłoszenia.";
       if (error?.text?.includes("Variables size limit")) {
-        msg = "Zdjęcia są nadal zbyt duże dla darmowej wersji EmailJS (limit 50KB). Spróbuj dodać tylko jedno zdjęcie lub usunąć załączniki.";
+        msg = "Przekroczono limit rozmiaru (50KB). Spróbuj bez zdjęcia.";
       }
       alert(msg);
       setSubmitStatus('error');
@@ -259,8 +266,7 @@ export const IssueForm: React.FC<any> = () => {
           </h1>
         </div>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* KONFIGURACJA DLA EMAILJS */}
+        <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6" encType="multipart/form-data">
           <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
           <input type="hidden" name="name" value={formState.senderName} />
           <input type="hidden" name="email" value={formState.senderEmail} />
@@ -362,34 +368,38 @@ export const IssueForm: React.FC<any> = () => {
 
           {/* Zdjęcia */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcia (maks. 2)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcie (maks. 1)</label>
             <p className="text-xs text-amber-600 mb-2">
-              Limity darmowej bramki email są bardzo restrykcyjne (50KB/całość). 
-              Zdjęcia zostaną <b>drastycznie zmniejszone</b> (~16KB/szt), aby przejść przez ten limit.
-              Może to wpłynąć na czytelność szczegółów.
+              Ze względu na limity darmowej bramki email, możesz dodać tylko 1 zdjęcie (zostanie zmniejszone).
             </p>
-            <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isCompressing ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isCompressing && fileInputRef.current?.click()}>
-              <input 
-                type="file" 
-                name="my_photo" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                accept="image/png, image/jpeg" 
-                multiple 
-                className="hidden" 
-              />
-              {isCompressing ? (
-                 <div className="flex flex-col items-center">
-                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
-                    <p className="text-sm mt-2 text-blue-600">Przygotowywanie miniatur (max 16KB)...</p>
-                 </div>
-              ) : (
-                <>
-                  <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-sm mt-2 text-slate-600">Kliknij by dodać (max 2)</p>
-                </>
-              )}
-            </div>
+            
+            {/* Ukrywamy przycisk dodawania jeśli już jest zdjęcie */}
+            {formState.photos.length === 0 ? (
+              <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isCompressing ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isCompressing && fileInputRef.current?.click()}>
+                {/* ZMIANA NAZWY NA my_photo - zgodnie z Twoim opisem konfiguracji EmailJS */}
+                <input 
+                  type="file" 
+                  name="my_photo" 
+                  ref={fileInputRef} 
+                  onChange={handleFileChange} 
+                  accept="image/png, image/jpeg" 
+                  className="hidden" 
+                  /* USUNIĘTO MULTIPLE */
+                />
+                {isCompressing ? (
+                  <div className="flex flex-col items-center">
+                      <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+                      <p className="text-sm mt-2 text-blue-600">Kompresja...</p>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-slate-400 mx-auto" />
+                    <p className="text-sm mt-2 text-slate-600">Kliknij by dodać zdjęcie</p>
+                  </>
+                )}
+              </div>
+            ) : null}
+
             <div className="mt-2 grid grid-cols-2 gap-4">
               {formState.photos.map((file, i) => (
                 <div key={i} className="relative aspect-video bg-slate-100 rounded border flex items-center justify-center group">
