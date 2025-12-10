@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
   MapPin, Wrench, Sparkles, Loader2 
@@ -8,18 +8,8 @@ import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '.
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-const MAX_FILE_SIZE_MB = 2; // Zmniejszone dla darmowej wersji EmailJS
-const MAX_FILES = 2; // Ograniczone dla stabilności
-
-// Helper do konwersji pliku na Base64
-const convertToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
-};
+const MAX_FILE_SIZE_MB = 2;
+const MAX_FILES = 2;
 
 export const IssueForm: React.FC<any> = () => {
   const [formState, setFormState] = useState<IssueFormState>({
@@ -39,6 +29,15 @@ export const IssueForm: React.FC<any> = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Sync React state photos with the native file input for sendForm
+  useEffect(() => {
+    if (fileInputRef.current) {
+      const dataTransfer = new DataTransfer();
+      formState.photos.forEach(file => dataTransfer.items.add(file));
+      fileInputRef.current.files = dataTransfer.files;
+    }
+  }, [formState.photos]);
 
   const validate = (): boolean => {
     const newErrors: ValidationErrors = {};
@@ -63,6 +62,7 @@ export const IssueForm: React.FC<any> = () => {
       setErrors(prev => ({ ...prev, description: undefined }));
     } catch (error) {
       console.error(error);
+      alert("Nie udało się połączyć z AI. Sprawdź czy klucz API jest skonfigurowany.");
     } finally {
       setIsImproving(false);
     }
@@ -86,7 +86,6 @@ export const IssueForm: React.FC<any> = () => {
     }
 
     setFormState(prev => ({ ...prev, photos: [...prev.photos, ...validFiles] }));
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removePhoto = (index: number) => {
@@ -96,31 +95,19 @@ export const IssueForm: React.FC<any> = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    if (!formRef.current) return;
+
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
     try {
-      // 1. Przygotowanie zdjęć (tylko 1 zdjęcie w podstawowej wersji szablonu dla uproszczenia)
-      // W wersji produkcyjnej EmailJS zalecane jest wysyłanie linków do zdjęć, a nie samych plików Base64
-      const photo1 = formState.photos[0] ? await convertToBase64(formState.photos[0]) : '';
-      
-      const templateParams = {
-        to_email: APP_CONFIG.receiverEmail,
-        from_name: formState.senderName,
-        from_email: formState.senderEmail,
-        location: formState.location,
-        category: formState.category,
-        urgency: formState.urgency,
-        message: formState.description,
-        // Załączniki w EmailJS wymagają włączenia ich w szablonie lub płatnego planu dla dużych plików
-        // Tutaj wysyłamy tylko tekst dla pewności działania w darmowym planie
-        my_photo: photo1 // Przykładowe przekazanie Base64 (wymaga konfiguracji w EmailJS)
-      };
-
-      await emailjs.send(
+      // Używamy sendForm zamiast send, aby poprawnie obsłużyć załączniki
+      // i uniknąć błędu 413 (zbyt duży payload JSON).
+      // Dane są pobierane z atrybutów 'name' w formularzu.
+      await emailjs.sendForm(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
-        templateParams,
+        formRef.current,
         APP_CONFIG.publicKey
       );
       
@@ -132,7 +119,7 @@ export const IssueForm: React.FC<any> = () => {
       });
     } catch (error) {
       console.error('FAILED...', error);
-      alert("Błąd wysyłania: Sprawdź konfigurację EmailJS w pliku config.ts");
+      alert("Błąd wysyłania zgłoszenia. Spróbuj ponownie później.");
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -173,16 +160,33 @@ export const IssueForm: React.FC<any> = () => {
         </div>
 
         <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Ukryte pole dla emaila odbiorcy */}
+          <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
+
           {/* Dane osobowe */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Nadawca</label>
-              <input type="text" value={formState.senderName} onChange={e => setFormState(prev => ({ ...prev, senderName: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" placeholder="Jan Kowalski" />
+              <input 
+                type="text" 
+                name="from_name" // Ważne dla EmailJS
+                value={formState.senderName} 
+                onChange={e => setFormState(prev => ({ ...prev, senderName: e.target.value }))} 
+                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
+                placeholder="Jan Kowalski" 
+              />
               {errors.senderName && <p className="text-red-500 text-xs">{errors.senderName}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <input type="email" value={formState.senderEmail} onChange={e => setFormState(prev => ({ ...prev, senderEmail: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" placeholder="email@przyklad.pl" />
+              <input 
+                type="email" 
+                name="from_email" // Ważne dla EmailJS
+                value={formState.senderEmail} 
+                onChange={e => setFormState(prev => ({ ...prev, senderEmail: e.target.value }))} 
+                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
+                placeholder="email@przyklad.pl" 
+              />
               {errors.senderEmail && <p className="text-red-500 text-xs">{errors.senderEmail}</p>}
             </div>
           </div>
@@ -191,12 +195,24 @@ export const IssueForm: React.FC<any> = () => {
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Miejsce</label>
-              <input type="text" value={formState.location} onChange={e => setFormState(prev => ({ ...prev, location: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" placeholder="np. Klatka B" />
+              <input 
+                type="text" 
+                name="location" // Ważne dla EmailJS
+                value={formState.location} 
+                onChange={e => setFormState(prev => ({ ...prev, location: e.target.value }))} 
+                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
+                placeholder="np. Klatka B" 
+              />
               {errors.location && <p className="text-red-500 text-xs">{errors.location}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Kategoria</label>
-              <select value={formState.category} onChange={e => setFormState(prev => ({ ...prev, category: e.target.value as IssueCategory }))} className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2">
+              <select 
+                name="category" // Ważne dla EmailJS
+                value={formState.category} 
+                onChange={e => setFormState(prev => ({ ...prev, category: e.target.value as IssueCategory }))} 
+                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2"
+              >
                 <option value="">Wybierz...</option>
                 {Object.values(IssueCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
@@ -210,7 +226,14 @@ export const IssueForm: React.FC<any> = () => {
             <div className="flex flex-wrap gap-3">
               {Object.values(UrgencyLevel).map((level) => (
                 <label key={level} className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border ${formState.urgency === level ? urgencyColor[level] : 'border-slate-200 bg-white'} hover:bg-slate-50`}>
-                  <input type="radio" name="urgency" value={level} checked={formState.urgency === level} onChange={() => setFormState(prev => ({ ...prev, urgency: level }))} className="hidden" />
+                  <input 
+                    type="radio" 
+                    name="urgency" // Ważne dla EmailJS
+                    value={level} 
+                    checked={formState.urgency === level} 
+                    onChange={() => setFormState(prev => ({ ...prev, urgency: level }))} 
+                    className="hidden" 
+                  />
                   <span className={`font-medium text-sm ${formState.urgency === level ? '' : 'text-slate-600'}`}>{level}</span>
                 </label>
               ))}
@@ -225,7 +248,13 @@ export const IssueForm: React.FC<any> = () => {
                 {isImproving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} AI
               </button>
             </div>
-            <textarea value={formState.description} onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} rows={5} className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" />
+            <textarea 
+              name="message" // Ważne dla EmailJS
+              value={formState.description} 
+              onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
+              rows={5} 
+              className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
+            />
             {errors.description && <p className="text-red-500 text-xs">{errors.description}</p>}
           </div>
 
@@ -233,7 +262,16 @@ export const IssueForm: React.FC<any> = () => {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcia (maks. 2)</label>
             <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => fileInputRef.current?.click()}>
-              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/png, image/jpeg" multiple className="hidden" />
+              {/* Input file jest ukryty, ale używany przez sendForm. Zsynchronizowany przez useEffect. */}
+              <input 
+                type="file" 
+                name="my_photo" // Nazwa musi pasować do parametru załącznika w EmailJS (zwykle automatyczne)
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                accept="image/png, image/jpeg" 
+                multiple 
+                className="hidden" 
+              />
               <Upload className="w-8 h-8 text-slate-400 mx-auto" />
               <p className="text-sm mt-2 text-slate-600">Kliknij by dodać (max 2MB)</p>
             </div>
