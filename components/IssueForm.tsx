@@ -8,51 +8,81 @@ import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '.
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-const MAX_FILE_SIZE_MB = 10; // Allow larger initial selection, we will compress it
+const MAX_FILE_SIZE_BYTES = 48 * 1024; // Celujemy w 48KB (żeby zmieścić się w limicie 50KB)
 const MAX_FILES = 2;
 
-// Helper to compress images
-const compressImage = (file: File): Promise<File> => {
+// Helper to compress images iteratively until they fit the size limit
+const compressImageToSize = (file: File): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (event) => {
       const img = new Image();
       img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return reject('No canvas context');
-
-        // Calculate new dimensions (max 1600px)
-        const MAX_DIM = 1600;
+      img.onload = async () => {
         let width = img.width;
         let height = img.height;
-
+        let quality = 0.9;
+        let blob: Blob | null = null;
+        
+        // Start optimization loop
+        // We start by drastically reducing dimensions if it's a huge photo
+        const START_MAX_DIM = 800; 
         if (width > height) {
-          if (width > MAX_DIM) {
-            height *= MAX_DIM / width;
-            width = MAX_DIM;
-          }
+           if (width > START_MAX_DIM) {
+              height *= START_MAX_DIM / width;
+              width = START_MAX_DIM;
+           }
         } else {
-          if (height > MAX_DIM) {
-            width *= MAX_DIM / height;
-            height = MAX_DIM;
-          }
+           if (height > START_MAX_DIM) {
+              width *= START_MAX_DIM / height;
+              height = START_MAX_DIM;
+           }
         }
 
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
+        const canvas = document.createElement('canvas');
+        let attempts = 0;
+        const maxAttempts = 10;
 
-        canvas.toBlob((blob) => {
-          if (!blob) return reject('Compression failed');
+        while (attempts < maxAttempts) {
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+             reject('Canvas context missing');
+             return;
+          }
+
+          // Draw white background (for transparency handling if png)
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Convert to blob
+          blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', quality));
+
+          if (blob && blob.size <= MAX_FILE_SIZE_BYTES) {
+            break; // Success!
+          }
+
+          // If too big, reduce dimensions and quality aggressively
+          width *= 0.75; 
+          height *= 0.75;
+          quality = Math.max(0.5, quality - 0.1); // Don't go below 50% quality if possible
+          attempts++;
+        }
+
+        if (blob) {
+          console.log(`Compressed to: ${(blob.size / 1024).toFixed(2)} KB after ${attempts} attempts`);
           const compressedFile = new File([blob], file.name, {
             type: 'image/jpeg',
             lastModified: Date.now(),
           });
           resolve(compressedFile);
-        }, 'image/jpeg', 0.7); // 70% quality
+        } else {
+          reject('Compression failed');
+        }
       };
       img.onerror = (error) => reject(error);
     };
@@ -132,7 +162,7 @@ export const IssueForm: React.FC<any> = () => {
         return ['image/jpeg', 'image/png', 'image/heic'].some(type => file.type.includes('image'));
       });
 
-      const compressedFiles = await Promise.all(validFiles.map(file => compressImage(file)));
+      const compressedFiles = await Promise.all(validFiles.map(file => compressImageToSize(file)));
 
       setFormState(prev => ({ ...prev, photos: [...prev.photos, ...compressedFiles] }));
     } catch (err) {
@@ -176,7 +206,7 @@ export const IssueForm: React.FC<any> = () => {
       });
     } catch (error) {
       console.error('FAILED...', error);
-      alert("Błąd wysyłania zgłoszenia. Sprawdź konfigurację EmailJS.");
+      alert("Błąd wysyłania zgłoszenia. Limit rozmiaru EmailJS mógł zostać przekroczony.");
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -323,6 +353,9 @@ export const IssueForm: React.FC<any> = () => {
           {/* Zdjęcia */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcia (maks. 2)</label>
+            <p className="text-xs text-amber-600 mb-2">
+              Uwaga: Ze względu na limity darmowej bramki email, zdjęcia zostaną mocno zmniejszone (do 50KB).
+            </p>
             <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isCompressing ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isCompressing && fileInputRef.current?.click()}>
               <input 
                 type="file" 
@@ -336,12 +369,12 @@ export const IssueForm: React.FC<any> = () => {
               {isCompressing ? (
                  <div className="flex flex-col items-center">
                     <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
-                    <p className="text-sm mt-2 text-blue-600">Przetwarzanie zdjęć...</p>
+                    <p className="text-sm mt-2 text-blue-600">Mocna kompresja (max 50KB)...</p>
                  </div>
               ) : (
                 <>
                   <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-sm mt-2 text-slate-600">Kliknij by dodać (automatyczna kompresja)</p>
+                  <p className="text-sm mt-2 text-slate-600">Kliknij by dodać</p>
                 </>
               )}
             </div>
@@ -351,7 +384,7 @@ export const IssueForm: React.FC<any> = () => {
                   <img src={URL.createObjectURL(file)} alt="" className="h-full object-contain" />
                   <button type="button" onClick={(e) => {e.stopPropagation(); removePhoto(i)}} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"><X className="w-3 h-3"/></button>
                   <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1 rounded">
-                    {(file.size / 1024).toFixed(0)}KB
+                    {(file.size / 1024).toFixed(1)}KB
                   </span>
                 </div>
               ))}
