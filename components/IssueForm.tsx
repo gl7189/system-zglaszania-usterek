@@ -145,7 +145,8 @@ export const IssueForm: React.FC<any> = () => {
 
     try {
       // EmailJS wysyła formularz. 
-      // Input `attachment_link` (ukryty) zostanie wysłany jako zwykły tekst.
+      // Link zostanie dołączony do pola 'message' (patrz hidden input poniżej),
+      // więc pojawi się w treści maila nawet jeśli szablon nie obsługuje 'attachment_link'.
       await emailjs.sendForm(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
@@ -210,10 +211,11 @@ export const IssueForm: React.FC<any> = () => {
           <input type="hidden" name="name" value={formState.senderName} />
           <input type="hidden" name="email" value={formState.senderEmail} />
           
-          {/* KLUCZOWA ZMIANA: Wysyłamy link jako tekst, a nie plik */}
+          {/* FIX: Łączymy opis i link w jedno pole 'message', bo szablon EmailJS prawdopodobnie używa tylko {{message}} */}
+          <input type="hidden" name="message" value={`${formState.description}${uploadedPhotoUrl ? `\n\n--- ZDJĘCIE USTERKI ---\n${uploadedPhotoUrl}` : ''}`} />
+          
+          {/* Opcjonalnie wysyłamy link osobno, gdyby szablon został zaktualizowany o {{attachment_link}} */}
           <input type="hidden" name="attachment_link" value={uploadedPhotoUrl} />
-          {/* Dodatkowo doklejamy link do wiadomości dla pewności */}
-          <input type="hidden" name="message_with_link" value={`${formState.description}\n\nZdjęcie usterki: ${uploadedPhotoUrl || 'Brak zdjęcia'}`} />
 
           {/* Dane osobowe */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -292,7 +294,7 @@ export const IssueForm: React.FC<any> = () => {
             </div>
           </div>
 
-          {/* Opis - używamy message_visible do edycji, ale wysyłamy message_with_link */}
+          {/* Opis */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-sm font-medium text-slate-700">Opis</label>
@@ -300,14 +302,13 @@ export const IssueForm: React.FC<any> = () => {
                 {isImproving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} AI
               </button>
             </div>
+            {/* Pole tekstowe bez atrybutu name, aby nie nadpisywało naszego hidden inputa 'message' */}
             <textarea 
               value={formState.description} 
               onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
               rows={5} 
               className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
             />
-            {/* Ten input zostanie zignorowany przez EmailJS jeśli użyjesz message_with_link w szablonie, lub możesz mapować description */}
-            <input type="hidden" name="message" value={formState.description} />
             {errors.description && <p className="text-red-500 text-xs">{errors.description}</p>}
           </div>
 
@@ -349,7 +350,7 @@ export const IssueForm: React.FC<any> = () => {
                      <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-700 truncate">{formState.photos[0].name}</p>
                         {uploadedPhotoUrl ? (
-                            <p className="text-xs text-green-600 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Link wygenerowany</p>
+                            <p className="text-xs text-green-600 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Link dołączony do zgłoszenia</p>
                         ) : (
                             <p className="text-xs text-amber-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> Generowanie linku...</p>
                         )}
