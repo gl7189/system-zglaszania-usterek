@@ -1,6 +1,6 @@
 {
   "name": "System Zgłaszania Usterek",
-  "description": "Aplikacja webowa do zgłaszania usterek nieruchomości z formularzem, obsługą zdjęć i integracją AI do redagowania opisów.",
+  "description": "Aplikacja webowa do zgłaszania usterek nieruchomości z formularzem i obsługą zdjęć.",
   "requestFramePermissions": [
     "camera"
   ]
