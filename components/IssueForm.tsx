@@ -1,105 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
-  Wrench, Sparkles, Loader2 
+  Wrench, Sparkles, Loader2, Link as LinkIcon 
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-// EmailJS Free Tier limit 50KB.
-// Zmniejszamy cel do 10KB, aby zmieścić się z zapasem (base64 + attachment + headers)
-const MAX_FILE_SIZE_BYTES = 10 * 1024; 
-const MAX_FILES = 1; 
-
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
-};
-
-const compressImageToSize = (file: File): Promise<File> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = async () => {
-        let width = img.width;
-        let height = img.height;
-        let quality = 0.7; 
-        let blob: Blob | null = null;
-        
-        const START_MAX_DIM = 600; 
-        if (width > height) {
-           if (width > START_MAX_DIM) {
-              height *= START_MAX_DIM / width;
-              width = START_MAX_DIM;
-           }
-        } else {
-           if (height > START_MAX_DIM) {
-              width *= START_MAX_DIM / height;
-              height = START_MAX_DIM;
-           }
-        }
-
-        const canvas = document.createElement('canvas');
-        let attempts = 0;
-        const maxAttempts = 15;
-
-        while (attempts < maxAttempts) {
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          
-          if (!ctx) {
-             reject('Canvas context missing');
-             return;
-          }
-
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-
-          blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', quality));
-
-          if (blob && blob.size <= MAX_FILE_SIZE_BYTES) {
-            break;
-          }
-
-          width *= 0.8; 
-          height *= 0.8;
-          quality = Math.max(0.1, quality - 0.1); 
-          attempts++;
-        }
-
-        if (blob) {
-          console.log(`Skompresowano: ${(blob.size / 1024).toFixed(2)} KB`);
-          const compressedFile = new File([blob], file.name, {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
-          resolve(compressedFile);
-        } else {
-          // Fallback
-          if (blob) {
-             const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
-             resolve(compressedFile);
-          } else {
-             reject('Błąd kompresji');
-          }
-        }
-      };
-      img.onerror = (error) => reject(error);
-    };
-    reader.onerror = (error) => reject(error);
-  });
-};
+// Limit rozmiaru przed wysłaniem na ImgBB (dla wydajności) - 5MB
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
 
 export const IssueForm: React.FC<any> = () => {
   const [formState, setFormState] = useState<IssueFormState>({
@@ -109,15 +19,15 @@ export const IssueForm: React.FC<any> = () => {
     category: '',
     urgency: UrgencyLevel.NORMAL,
     description: '',
-    photos: []
+    photos: [] // Używamy tylko do podglądu lokalnego
   });
 
-  // Dodatkowe pole na base64 (backup gdyby załącznik nie przeszedł)
-  const [photoBase64, setPhotoBase64] = useState<string>('');
-
+  // Stan przechowujący URL do zdjęcia na serwerze
+  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string>('');
+  
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isImproving, setIsImproving] = useState(false);
   
@@ -133,6 +43,12 @@ export const IssueForm: React.FC<any> = () => {
     if (!formState.location.trim()) { newErrors.location = 'Wymagane'; isValid = false; }
     if (!formState.category) { newErrors.category = 'Wymagane'; isValid = false; }
     if (formState.description.length < 20) { newErrors.description = 'Min. 20 znaków'; isValid = false; }
+
+    // Sprawdź czy klucz API jest skonfigurowany, jeśli użytkownik dodaje zdjęcie
+    if (formState.photos.length > 0 && (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey === 'YOUR_IMGBB_API_KEY_HERE')) {
+        alert("Błąd konfiguracji: Brak klucza API ImgBB w pliku config.ts. Zdjęcia nie będą działać.");
+        isValid = false;
+    }
 
     setErrors(newErrors);
     return isValid;
@@ -153,59 +69,65 @@ export const IssueForm: React.FC<any> = () => {
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const originalFile = e.target.files?.[0];
+  const uploadToImgBB = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('image', file);
     
-    // Jeśli użytkownik anulował wybór, nie rób nic (nie czyść stanu)
-    if (!originalFile) return;
+    // Usuwamy 'YOUR_IMGBB_API_KEY_HERE' jeśli użytkownik zapomniał zmienić, żeby request od razu padł z jasnym błędem
+    const apiKey = APP_CONFIG.imgbbApiKey;
     
-    if (formState.photos.length >= MAX_FILES) {
-      alert(`Można dodać maksymalnie ${MAX_FILES} zdjęcie.`);
-      // Wyczyść input, żeby można było wybrać to samo zdjęcie ponownie po usunięciu
-      e.target.value = ''; 
-      return;
-    }
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+      method: 'POST',
+      body: formData
+    });
 
-    setIsCompressing(true);
-    try {
-      // 1. Kompresja
-      const compressedFile = await compressImageToSize(originalFile);
-      
-      // 2. Wstawienie SKOMPRESOWANEGO pliku z powrotem do inputa
-      // To kluczowy krok dla EmailJS - input musi mieć plik fizycznie
-      const dt = new DataTransfer();
-      dt.items.add(compressedFile);
-      if (fileInputRef.current) {
-        fileInputRef.current.files = dt.files;
-      }
-
-      // 3. Generowanie Base64 (backup)
-      const base64 = await fileToBase64(compressedFile);
-      setPhotoBase64(base64);
-
-      // 4. Aktualizacja podglądu
-      setFormState(prev => ({ ...prev, photos: [compressedFile] }));
-
-      console.log("=== ZDJĘCIE PRZYGOTOWANE ===");
-      console.log(`Rozmiar: ${(compressedFile.size/1024).toFixed(2)}KB`);
-      console.log(`Input files: ${fileInputRef.current?.files?.length}`);
-
-    } catch (err) {
-      console.error("Compression error:", err);
-      alert("Błąd przetwarzania zdjęcia.");
-      // Wyczyść input w razie błędu
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } finally {
-      setIsCompressing(false);
+    const data = await response.json();
+    if (data.success) {
+      return data.data.url; // Bezpośredni link do obrazka
+    } else {
+      throw new Error(data.error?.message || 'Błąd uploadu');
     }
   };
 
-  const removePhoto = (index: number) => {
-    setFormState(prev => ({ ...prev, photos: [] }));
-    setPhotoBase64('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_UPLOAD_SIZE) {
+        alert("Plik jest za duży (max 5MB)");
+        return;
     }
+
+    setIsUploading(true);
+    try {
+        // 1. Pokaż podgląd lokalnie
+        setFormState(prev => ({ ...prev, photos: [file] }));
+
+        // 2. Wyślij na serwer ImgBB
+        if (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey.includes('YOUR_IMGBB')) {
+            throw new Error("Brak klucza API ImgBB w konfiguracji.");
+        }
+
+        const url = await uploadToImgBB(file);
+        setUploadedPhotoUrl(url);
+        console.log("Zdjęcie wgrane:", url);
+
+    } catch (err: any) {
+        console.error("Upload error:", err);
+        alert(`Nie udało się wgrać zdjęcia: ${err.message}`);
+        // Cofnij wybór
+        setFormState(prev => ({ ...prev, photos: [] }));
+        setUploadedPhotoUrl('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    } finally {
+        setIsUploading(false);
+    }
+  };
+
+  const removePhoto = () => {
+    setFormState(prev => ({ ...prev, photos: [] }));
+    setUploadedPhotoUrl('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -213,22 +135,17 @@ export const IssueForm: React.FC<any> = () => {
     if (!validate()) return;
     if (!formRef.current) return;
 
-    // Safety check: upewnij się, że input ma plik jeśli stan ma zdjęcie
-    if (formState.photos.length > 0 && (!fileInputRef.current?.files || fileInputRef.current.files.length === 0)) {
-        console.warn("Input pliku był pusty mimo zdjęcia w stanie! Próba naprawy...");
-        const dt = new DataTransfer();
-        dt.items.add(formState.photos[0]);
-        if (fileInputRef.current) fileInputRef.current.files = dt.files;
+    if (isUploading) {
+        alert("Poczekaj na zakończenie wysyłania zdjęcia.");
+        return;
     }
 
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
-    console.log("=== WYSYŁANIE ===");
-    console.log("Input 'my_photo' files:", fileInputRef.current?.files?.length);
-    console.log("Input 'my_photo_base64' length:", photoBase64.length);
-
     try {
+      // EmailJS wysyła formularz. 
+      // Input `attachment_link` (ukryty) zostanie wysłany jako zwykły tekst.
       await emailjs.sendForm(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
@@ -238,21 +155,17 @@ export const IssueForm: React.FC<any> = () => {
       
       console.log("=== SUKCES EMAILJS ===");
       setSubmitStatus('success');
+      
       // Reset form
       setFormState({
         senderName: '', senderEmail: '', location: '', category: '',
         urgency: UrgencyLevel.NORMAL, description: '', photos: []
       });
-      setPhotoBase64('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploadedPhotoUrl('');
       
     } catch (error: any) {
       console.error('FAILED...', error);
-      let msg = "Błąd wysyłania zgłoszenia.";
-      if (error?.text?.includes("Variables size limit")) {
-        msg = "Przekroczono limit rozmiaru (50KB).";
-      }
-      alert(msg);
+      alert("Błąd wysyłania zgłoszenia: " + JSON.stringify(error));
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -273,7 +186,7 @@ export const IssueForm: React.FC<any> = () => {
         </div>
         <h2 className="text-2xl font-bold text-slate-900 mb-2">Zgłoszenie wysłane!</h2>
         <p className="text-slate-600 mb-6">
-          Administrator otrzymał powiadomienie. Dziękujemy.
+          Administrator otrzymał powiadomienie.
         </p>
         <button onClick={() => setSubmitStatus('idle')} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg">
           Wyślij kolejne
@@ -292,13 +205,15 @@ export const IssueForm: React.FC<any> = () => {
           </h1>
         </div>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6" encType="multipart/form-data">
+        <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
           <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
           <input type="hidden" name="name" value={formState.senderName} />
           <input type="hidden" name="email" value={formState.senderEmail} />
           
-          {/* BACKUP BASE64: To pole zostanie wysłane jako zwykły tekst, nawet jeśli załącznik padnie */}
-          <input type="hidden" name="my_photo_base64" value={photoBase64} />
+          {/* KLUCZOWA ZMIANA: Wysyłamy link jako tekst, a nie plik */}
+          <input type="hidden" name="attachment_link" value={uploadedPhotoUrl} />
+          {/* Dodatkowo doklejamy link do wiadomości dla pewności */}
+          <input type="hidden" name="message_with_link" value={`${formState.description}\n\nZdjęcie usterki: ${uploadedPhotoUrl || 'Brak zdjęcia'}`} />
 
           {/* Dane osobowe */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -377,7 +292,7 @@ export const IssueForm: React.FC<any> = () => {
             </div>
           </div>
 
-          {/* Opis */}
+          {/* Opis - używamy message_visible do edycji, ale wysyłamy message_with_link */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-sm font-medium text-slate-700">Opis</label>
@@ -386,37 +301,36 @@ export const IssueForm: React.FC<any> = () => {
               </button>
             </div>
             <textarea 
-              name="message" 
               value={formState.description} 
               onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
               rows={5} 
               className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
             />
+            {/* Ten input zostanie zignorowany przez EmailJS jeśli użyjesz message_with_link w szablonie, lub możesz mapować description */}
+            <input type="hidden" name="message" value={formState.description} />
             {errors.description && <p className="text-red-500 text-xs">{errors.description}</p>}
           </div>
 
           {/* Zdjęcia */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcie (maks. 1)</label>
-            <p className="text-xs text-amber-600 mb-2">
-              Ze względu na limity darmowej bramki email, możesz dodać tylko 1 zdjęcie (zostanie mocno zmniejszone).
+            <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcie</label>
+            <p className="text-xs text-blue-600 mb-2">
+              Zdjęcie zostanie automatycznie wysłane na bezpieczny hosting, a administrator otrzyma link.
             </p>
             
-            {/* Ukrywamy przycisk dodawania jeśli już jest zdjęcie */}
             {formState.photos.length === 0 ? (
-              <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isCompressing ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isCompressing && fileInputRef.current?.click()}>
+              <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isUploading ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isUploading && fileInputRef.current?.click()}>
                 <input 
                   type="file" 
-                  name="my_photo" 
                   ref={fileInputRef} 
                   onChange={handleFileChange} 
                   accept="image/png, image/jpeg" 
                   className="hidden" 
                 />
-                {isCompressing ? (
+                {isUploading ? (
                   <div className="flex flex-col items-center">
                       <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
-                      <p className="text-sm mt-2 text-blue-600">Kompresja...</p>
+                      <p className="text-sm mt-2 text-blue-600">Wysyłanie na serwer...</p>
                   </div>
                 ) : (
                   <>
@@ -427,20 +341,26 @@ export const IssueForm: React.FC<any> = () => {
               </div>
             ) : null}
 
-            <div className="mt-2 grid grid-cols-2 gap-4">
-              {formState.photos.map((file, i) => (
-                <div key={i} className="relative aspect-video bg-slate-100 rounded border flex items-center justify-center group">
-                  <img src={URL.createObjectURL(file)} alt="" className="h-full object-contain" />
-                  <button type="button" onClick={(e) => {e.stopPropagation(); removePhoto(i)}} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"><X className="w-3 h-3"/></button>
-                  <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1 rounded">
-                    {(file.size / 1024).toFixed(1)}KB
-                  </span>
+            {/* Podgląd */}
+            {formState.photos.length > 0 && (
+                <div className="mt-2 relative bg-slate-100 rounded border p-2">
+                  <div className="flex items-center gap-3">
+                     <img src={URL.createObjectURL(formState.photos[0])} alt="" className="h-16 w-16 object-cover rounded" />
+                     <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{formState.photos[0].name}</p>
+                        {uploadedPhotoUrl ? (
+                            <p className="text-xs text-green-600 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Link wygenerowany</p>
+                        ) : (
+                            <p className="text-xs text-amber-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> Generowanie linku...</p>
+                        )}
+                     </div>
+                     <button type="button" onClick={removePhoto} className="p-2 text-slate-400 hover:text-red-500"><X className="w-5 h-5"/></button>
+                  </div>
                 </div>
-              ))}
-            </div>
+            )}
           </div>
 
-          <button type="submit" disabled={isSubmitting || isCompressing} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+          <button type="submit" disabled={isSubmitting || isUploading || (formState.photos.length > 0 && !uploadedPhotoUrl)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             {isSubmitting ? <Loader2 className="animate-spin" /> : <Send />} Wyślij zgłoszenie
           </button>
         </form>
