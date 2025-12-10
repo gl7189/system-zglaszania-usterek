@@ -6,5 +6,5 @@ export const APP_CONFIG = {
   publicKey: 'y37vsFJVjmxf4kZih',     // Np. user_A8s7d6f5g4h
   
   // Email administratora (do wyświetlania w powiadomieniu sukcesu)
-  receiverEmail: 'administrator5@zarzadca.wroclaw.pl'
+  receiverEmail: 'rivolec@gmail.com'
 };
