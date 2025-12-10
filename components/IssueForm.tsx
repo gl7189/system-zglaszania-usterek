@@ -8,7 +8,11 @@ import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '.
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-const MAX_FILE_SIZE_BYTES = 48 * 1024; // Celujemy w 48KB (żeby zmieścić się w limicie 50KB)
+// EmailJS Free Tier ma limit 50KB na całe żądanie.
+// Kodowanie Base64 zwiększa rozmiar pliku o ~33%.
+// 16KB plik -> ~21.5KB Base64.
+// Przy 2 plikach mamy ~43KB + treść formularza = ~45-48KB (na styk).
+const MAX_FILE_SIZE_BYTES = 16 * 1024; 
 const MAX_FILES = 2;
 
 // Helper to compress images iteratively until they fit the size limit
@@ -22,12 +26,13 @@ const compressImageToSize = (file: File): Promise<File> => {
       img.onload = async () => {
         let width = img.width;
         let height = img.height;
-        let quality = 0.9;
+        let quality = 0.8;
         let blob: Blob | null = null;
         
         // Start optimization loop
         // We start by drastically reducing dimensions if it's a huge photo
-        const START_MAX_DIM = 800; 
+        // For 15KB target, we need small dimensions, start around 600px
+        const START_MAX_DIM = 600; 
         if (width > height) {
            if (width > START_MAX_DIM) {
               height *= START_MAX_DIM / width;
@@ -42,7 +47,7 @@ const compressImageToSize = (file: File): Promise<File> => {
 
         const canvas = document.createElement('canvas');
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = 15; // More attempts allowed
 
         while (attempts < maxAttempts) {
           canvas.width = width;
@@ -67,9 +72,9 @@ const compressImageToSize = (file: File): Promise<File> => {
           }
 
           // If too big, reduce dimensions and quality aggressively
-          width *= 0.75; 
-          height *= 0.75;
-          quality = Math.max(0.5, quality - 0.1); // Don't go below 50% quality if possible
+          width *= 0.8; 
+          height *= 0.8;
+          quality = Math.max(0.3, quality - 0.1); 
           attempts++;
         }
 
@@ -81,7 +86,14 @@ const compressImageToSize = (file: File): Promise<File> => {
           });
           resolve(compressedFile);
         } else {
-          reject('Compression failed');
+          // If we failed to compress enough, we might need to reject or return the smallest we got
+          // For now, let's return what we have but warn in console
+          if (blob) {
+             const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+             resolve(compressedFile);
+          } else {
+             reject('Compression failed');
+          }
         }
       };
       img.onerror = (error) => reject(error);
@@ -188,9 +200,6 @@ export const IssueForm: React.FC<any> = () => {
     setSubmitStatus('idle');
 
     try {
-      // Używamy sendForm zamiast send, aby poprawnie obsłużyć załączniki.
-      // Dane są pobierane z atrybutów 'name' w formularzu.
-      // Dzięki useEffect i DataTransfer, załączone pliki są już skompresowane.
       await emailjs.sendForm(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
@@ -204,9 +213,13 @@ export const IssueForm: React.FC<any> = () => {
         senderName: '', senderEmail: '', location: '', category: '',
         urgency: UrgencyLevel.NORMAL, description: '', photos: []
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('FAILED...', error);
-      alert("Błąd wysyłania zgłoszenia. Limit rozmiaru EmailJS mógł zostać przekroczony.");
+      let msg = "Błąd wysyłania zgłoszenia.";
+      if (error?.text?.includes("Variables size limit")) {
+        msg = "Zdjęcia są nadal zbyt duże dla darmowej wersji EmailJS (limit 50KB). Spróbuj dodać tylko jedno zdjęcie lub usunąć załączniki.";
+      }
+      alert(msg);
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -248,10 +261,7 @@ export const IssueForm: React.FC<any> = () => {
 
         <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* KONFIGURACJA DLA EMAILJS */}
-          {/* Adres odbiorcy z config.ts -> w EmailJS ustaw "To Email" na {{to_email}} */}
           <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
-          
-          {/* Dodatkowe pola ukryte, aby pasowały do domyślnych nagłówków EmailJS {{name}} i {{email}} */}
           <input type="hidden" name="name" value={formState.senderName} />
           <input type="hidden" name="email" value={formState.senderEmail} />
 
@@ -354,7 +364,9 @@ export const IssueForm: React.FC<any> = () => {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcia (maks. 2)</label>
             <p className="text-xs text-amber-600 mb-2">
-              Uwaga: Ze względu na limity darmowej bramki email, zdjęcia zostaną mocno zmniejszone (do 50KB).
+              Limity darmowej bramki email są bardzo restrykcyjne (50KB/całość). 
+              Zdjęcia zostaną <b>drastycznie zmniejszone</b> (~16KB/szt), aby przejść przez ten limit.
+              Może to wpłynąć na czytelność szczegółów.
             </p>
             <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isCompressing ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isCompressing && fileInputRef.current?.click()}>
               <input 
@@ -369,12 +381,12 @@ export const IssueForm: React.FC<any> = () => {
               {isCompressing ? (
                  <div className="flex flex-col items-center">
                     <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
-                    <p className="text-sm mt-2 text-blue-600">Mocna kompresja (max 50KB)...</p>
+                    <p className="text-sm mt-2 text-blue-600">Przygotowywanie miniatur (max 16KB)...</p>
                  </div>
               ) : (
                 <>
                   <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-sm mt-2 text-slate-600">Kliknij by dodać</p>
+                  <p className="text-sm mt-2 text-slate-600">Kliknij by dodać (max 2)</p>
                 </>
               )}
             </div>
