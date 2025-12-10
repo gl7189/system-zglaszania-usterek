@@ -6,7 +6,7 @@ export const APP_CONFIG = {
   publicKey: 'y37vsFJVjmxf4kZih',     
   
   // Email administratora (do wyświetlania w powiadomieniu sukcesu)
-  receiverEmail: 'administrator5@zarzadca.wroclaw.pl',
+  receiverEmail: 'rivolec@gmail.com',
 
   // Klucz API do ImgBB (darmowy hosting zdjęć)
   // Wejdź na https://api.imgbb.com/ aby uzyskać darmowy klucz
