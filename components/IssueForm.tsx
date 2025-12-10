@@ -1,17 +1,26 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
-  MapPin, Wrench, Sparkles, Loader2 
+  Wrench, Sparkles, Loader2 
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
 import { APP_CONFIG } from '../config';
 import { improveDescription } from '../services/geminiService';
 
-// EmailJS Free Tier ma limit 50KB.
-// Zmniejszamy limit do 12KB i TYLKO 1 PLIKU.
-const MAX_FILE_SIZE_BYTES = 12 * 1024; 
+// EmailJS Free Tier limit 50KB.
+// Zmniejszamy cel do 10KB, aby zmieścić się z zapasem (base64 + attachment + headers)
+const MAX_FILE_SIZE_BYTES = 10 * 1024; 
 const MAX_FILES = 1; 
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
+};
 
 const compressImageToSize = (file: File): Promise<File> => {
   return new Promise((resolve, reject) => {
@@ -26,7 +35,7 @@ const compressImageToSize = (file: File): Promise<File> => {
         let quality = 0.7; 
         let blob: Blob | null = null;
         
-        const START_MAX_DIM = 500; 
+        const START_MAX_DIM = 600; 
         if (width > height) {
            if (width > START_MAX_DIM) {
               height *= START_MAX_DIM / width;
@@ -65,7 +74,7 @@ const compressImageToSize = (file: File): Promise<File> => {
 
           width *= 0.8; 
           height *= 0.8;
-          quality = Math.max(0.2, quality - 0.1); 
+          quality = Math.max(0.1, quality - 0.1); 
           attempts++;
         }
 
@@ -77,6 +86,7 @@ const compressImageToSize = (file: File): Promise<File> => {
           });
           resolve(compressedFile);
         } else {
+          // Fallback
           if (blob) {
              const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
              resolve(compressedFile);
@@ -102,6 +112,9 @@ export const IssueForm: React.FC<any> = () => {
     photos: []
   });
 
+  // Dodatkowe pole na base64 (backup gdyby załącznik nie przeszedł)
+  const [photoBase64, setPhotoBase64] = useState<string>('');
+
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -110,18 +123,6 @@ export const IssueForm: React.FC<any> = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-
-  // Synchronizacja stanu React z inputem pliku (dla pewności, że input nie jest pusty)
-  useEffect(() => {
-    if (fileInputRef.current && formState.photos.length > 0) {
-      const dataTransfer = new DataTransfer();
-      formState.photos.forEach(file => dataTransfer.items.add(file));
-      fileInputRef.current.files = dataTransfer.files;
-    } else if (fileInputRef.current && formState.photos.length === 0) {
-      // Jeśli usunięto zdjęcia ze stanu, czyścimy input
-      fileInputRef.current.value = '';
-    }
-  }, [formState.photos]);
 
   const validate = (): boolean => {
     const newErrors: ValidationErrors = {};
@@ -153,38 +154,58 @@ export const IssueForm: React.FC<any> = () => {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []) as File[];
+    const originalFile = e.target.files?.[0];
     
-    if (files.length + formState.photos.length > MAX_FILES) {
+    // Jeśli użytkownik anulował wybór, nie rób nic (nie czyść stanu)
+    if (!originalFile) return;
+    
+    if (formState.photos.length >= MAX_FILES) {
       alert(`Można dodać maksymalnie ${MAX_FILES} zdjęcie.`);
+      // Wyczyść input, żeby można było wybrać to samo zdjęcie ponownie po usunięciu
+      e.target.value = ''; 
       return;
     }
 
     setIsCompressing(true);
     try {
-      const validFiles = files.filter(file => {
-        return ['image/jpeg', 'image/png', 'image/heic'].some(type => file.type.includes('image'));
-      });
-
-      const fileToProcess = validFiles[0]; 
-      if (!fileToProcess) return;
-
-      const compressedFile = await compressImageToSize(fileToProcess);
+      // 1. Kompresja
+      const compressedFile = await compressImageToSize(originalFile);
       
+      // 2. Wstawienie SKOMPRESOWANEGO pliku z powrotem do inputa
+      // To kluczowy krok dla EmailJS - input musi mieć plik fizycznie
+      const dt = new DataTransfer();
+      dt.items.add(compressedFile);
+      if (fileInputRef.current) {
+        fileInputRef.current.files = dt.files;
+      }
+
+      // 3. Generowanie Base64 (backup)
+      const base64 = await fileToBase64(compressedFile);
+      setPhotoBase64(base64);
+
+      // 4. Aktualizacja podglądu
       setFormState(prev => ({ ...prev, photos: [compressedFile] }));
+
+      console.log("=== ZDJĘCIE PRZYGOTOWANE ===");
+      console.log(`Rozmiar: ${(compressedFile.size/1024).toFixed(2)}KB`);
+      console.log(`Input files: ${fileInputRef.current?.files?.length}`);
+
     } catch (err) {
       console.error("Compression error:", err);
       alert("Błąd przetwarzania zdjęcia.");
+      // Wyczyść input w razie błędu
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } finally {
       setIsCompressing(false);
-      // USUNIĘTO: fileInputRef.current.value = '' - to powodowało błędy!
-      // Input czyścimy tylko gdy użytkownik kliknie "usuń" (funkcja removePhoto)
     }
   };
 
   const removePhoto = (index: number) => {
-    setFormState(prev => ({ ...prev, photos: prev.photos.filter((_, i) => i !== index) }));
-    // Input wyczyści się automatycznie dzięki useEffect, gdy photos będzie puste
+    setFormState(prev => ({ ...prev, photos: [] }));
+    setPhotoBase64('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -192,26 +213,20 @@ export const IssueForm: React.FC<any> = () => {
     if (!validate()) return;
     if (!formRef.current) return;
 
-    // --- FIX KRYTYCZNY ---
-    // Wymuszamy przypisanie pliku do inputa tuż przed wysłaniem.
-    // To naprawia sytuację, w której input byłby pusty w momencie submitu.
-    if (fileInputRef.current && formState.photos.length > 0) {
-      try {
-        const dataTransfer = new DataTransfer();
-        // Dodajemy ZAWSZE pierwsze zdjęcie ze stanu (bo limit=1)
-        dataTransfer.items.add(formState.photos[0]);
-        fileInputRef.current.files = dataTransfer.files;
-        
-        console.log("=== FIX: Wymuszono przypisanie pliku do inputa przed wysyłką ===");
-        console.log(`Plik: ${fileInputRef.current.files[0].name}, Rozmiar: ${fileInputRef.current.files[0].size}`);
-      } catch (err) {
-        console.error("Błąd podczas przypisywania pliku:", err);
-      }
+    // Safety check: upewnij się, że input ma plik jeśli stan ma zdjęcie
+    if (formState.photos.length > 0 && (!fileInputRef.current?.files || fileInputRef.current.files.length === 0)) {
+        console.warn("Input pliku był pusty mimo zdjęcia w stanie! Próba naprawy...");
+        const dt = new DataTransfer();
+        dt.items.add(formState.photos[0]);
+        if (fileInputRef.current) fileInputRef.current.files = dt.files;
     }
-    // ---------------------
 
     setIsSubmitting(true);
     setSubmitStatus('idle');
+
+    console.log("=== WYSYŁANIE ===");
+    console.log("Input 'my_photo' files:", fileInputRef.current?.files?.length);
+    console.log("Input 'my_photo_base64' length:", photoBase64.length);
 
     try {
       await emailjs.sendForm(
@@ -223,15 +238,19 @@ export const IssueForm: React.FC<any> = () => {
       
       console.log("=== SUKCES EMAILJS ===");
       setSubmitStatus('success');
+      // Reset form
       setFormState({
         senderName: '', senderEmail: '', location: '', category: '',
         urgency: UrgencyLevel.NORMAL, description: '', photos: []
       });
+      setPhotoBase64('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      
     } catch (error: any) {
       console.error('FAILED...', error);
       let msg = "Błąd wysyłania zgłoszenia.";
       if (error?.text?.includes("Variables size limit")) {
-        msg = "Przekroczono limit rozmiaru (50KB). Spróbuj bez zdjęcia.";
+        msg = "Przekroczono limit rozmiaru (50KB).";
       }
       alert(msg);
       setSubmitStatus('error');
@@ -277,6 +296,9 @@ export const IssueForm: React.FC<any> = () => {
           <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
           <input type="hidden" name="name" value={formState.senderName} />
           <input type="hidden" name="email" value={formState.senderEmail} />
+          
+          {/* BACKUP BASE64: To pole zostanie wysłane jako zwykły tekst, nawet jeśli załącznik padnie */}
+          <input type="hidden" name="my_photo_base64" value={photoBase64} />
 
           {/* Dane osobowe */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -377,7 +399,7 @@ export const IssueForm: React.FC<any> = () => {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcie (maks. 1)</label>
             <p className="text-xs text-amber-600 mb-2">
-              Ze względu na limity darmowej bramki email, możesz dodać tylko 1 zdjęcie (zostanie zmniejszone).
+              Ze względu na limity darmowej bramki email, możesz dodać tylko 1 zdjęcie (zostanie mocno zmniejszone).
             </p>
             
             {/* Ukrywamy przycisk dodawania jeśli już jest zdjęcie */}
