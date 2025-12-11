@@ -5,13 +5,10 @@ import {
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
-import { APP_CONFIG } from '../config';
+import { APP_CONFIG, PRODUCTION_EMAIL } from '../config';
 
 // Limit rozmiaru przed wysłaniem na ImgBB (dla wydajności) - 5MB
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
-
-// Oficjalny mail produkcyjny do porównania
-const PRODUCTION_EMAIL = 'administrator5@zarzadca.wroclaw.pl';
 
 export const IssueForm: React.FC<any> = () => {
   const [formState, setFormState] = useState<IssueFormState>({
@@ -42,13 +39,14 @@ export const IssueForm: React.FC<any> = () => {
   // DEBUGGING: Logowanie konfiguracji przy starcie
   useEffect(() => {
     console.group("🔧 Konfiguracja Formularza");
-    console.log("Tryb developerski:", isDevMode);
-    console.log("Docelowy email w kodzie (to_email):", APP_CONFIG.receiverEmail);
-    console.log("Czy klucz ImgBB jest ustawiony?", !!APP_CONFIG.imgbbApiKey);
+    console.log("Tryb developerski (env != prod):", isDevMode);
+    console.log("Adres docelowy (używany):", APP_CONFIG.receiverEmail);
+    console.log("Adres produkcyjny (wzorzec):", PRODUCTION_EMAIL);
+    
     if (isDevMode) {
-        console.warn("UWAGA: Maile będą wysyłane na adres testowy, a nie do zarządcy!");
+        console.warn("UWAGA: Jesteś w trybie testowym. Maile nie trafią do zarządcy.");
     } else {
-        console.log("OK: Tryb produkcyjny aktywny. Maile idą do zarządcy.");
+        console.log("OK: Tryb produkcyjny. Zgłoszenia trafią do zarządcy.");
     }
     console.groupEnd();
   }, [isDevMode]);
@@ -215,7 +213,7 @@ export const IssueForm: React.FC<any> = () => {
       {isDevMode && (
          <div className="bg-amber-50 border-b border-amber-200 p-3 text-xs text-amber-800 text-center flex items-center justify-center gap-2">
             <AlertTriangle className="w-4 h-4" />
-            <span>Tryb testowy: Zgłoszenia trafiają na mail skonfigurowany w Vercel/Local (.env), a nie do zarządcy.</span>
+            <span>Tryb testowy: Zgłoszenia trafiają na mail skonfigurowany w środowisku (Vercel/Local), a nie do zarządcy.</span>
          </div>
       )}
 
