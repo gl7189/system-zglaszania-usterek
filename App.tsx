@@ -1,6 +1,5 @@
 import React from 'react';
 import { IssueForm } from './components/IssueForm';
-import { Logo } from './components/Logo';
 import { APP_CONFIG } from './config';
 
 export default function App() {
@@ -12,8 +11,11 @@ export default function App() {
           
           {/* Logo Wspólnoty - teraz klikalne (resetuje stan/odświeża) */}
           <a href="/" title="Strona główna" className="inline-block hover:opacity-90 transition-opacity">
-            {/* Używamy komponentu Logo (SVG) zamiast img */}
-            <Logo className="h-28 mx-auto mb-6 w-auto" />
+            <img 
+              src="https://i.ibb.co/35dqrC0H/logo-as2632.png" 
+              alt="Logo Wspólnoty - Aleja Śliwowa" 
+              className="h-24 mx-auto mb-6 object-contain" 
+            />
           </a>
 
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">System Zgłaszania Usterek</h1>

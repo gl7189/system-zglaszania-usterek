@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   define: {
-    // To pozwala używać process.env.VERCEL_ENV w kodzie Reacta
-    // Vercel ustawia to automatycznie na 'production', 'preview' lub 'development'
-    'import.meta.env.VERCEL_ENV': JSON.stringify(process.env.VERCEL_ENV),
+    // Definiujemy stałą globalną dostępną w aplikacji
+    // Używamy JSON.stringify aby przekazać wartość jako string, z fallbackiem do 'development'
+    '__VERCEL_ENV__': JSON.stringify(process.env.VERCEL_ENV || 'development'),
   },
 })

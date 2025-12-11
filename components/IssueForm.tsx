@@ -45,7 +45,9 @@ export const IssueForm: React.FC<any> = () => {
     // ZMIANA: Logujemy tylko w trybie developerskim
     if (isDevMode) {
         console.group("🔧 Konfiguracja Formularza");
-        console.log("Środowisko Vercel (VERCEL_ENV):", import.meta.env.VERCEL_ENV || 'local/unknown');
+        // Używamy globalnej stałej __VERCEL_ENV__
+        const envName = typeof __VERCEL_ENV__ !== 'undefined' ? __VERCEL_ENV__ : 'unknown';
+        console.log("Środowisko Vercel (VERCEL_ENV):", envName);
         console.log("Tryb developerski (env != prod):", isDevMode);
         console.log("Adres docelowy (używany):", APP_CONFIG.receiverEmail);
         console.log("Adres produkcyjny (wzorzec):", PRODUCTION_EMAIL);
