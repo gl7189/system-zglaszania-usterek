@@ -135,7 +135,6 @@ export const IssueForm: React.FC<any> = () => {
     e.preventDefault();
     
     // --- OCHRONA ANTYSPAMOWA (HONEYPOT) ---
-    // Jeśli pole pułapki jest wypełnione, udajemy sukces, ale nic nie wysyłamy.
     if (honeyPot) {
       console.log("Bot detected. Silently ignoring.");
       setSubmitStatus('success'); 
@@ -144,8 +143,7 @@ export const IssueForm: React.FC<any> = () => {
     // --------------------------------------
 
     if (!validate()) return;
-    if (!formRef.current) return;
-
+    
     if (isUploading) {
         alert("Poczekaj na zakończenie wysyłania zdjęcia.");
         return;
@@ -154,11 +152,43 @@ export const IssueForm: React.FC<any> = () => {
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
+    // Przygotowanie danych do wysyłki
+    // Mapujemy pola formularza na różne warianty nazw, aby pasowały do każdego szablonu EmailJS
+    const templateParams = {
+        // Odbiorca
+        to_email: APP_CONFIG.receiverEmail,
+
+        // Dane zgłaszającego (różne warianty)
+        senderName: formState.senderName,
+        from_name: formState.senderName,   // Często domyślna zmienna w EmailJS
+        name: formState.senderName,
+
+        // Email zgłaszającego (do reply-to)
+        senderEmail: formState.senderEmail,
+        reply_to: formState.senderEmail,   // Wymagane, aby "Odpowiedz" szło do lokatora
+        from_email: formState.senderEmail,
+
+        // Szczegóły
+        location: formState.location,
+        category: formState.category,
+        urgency: formState.urgency,
+
+        // Opis (różne warianty)
+        description: formState.description,
+        message: formState.description,    // Często domyślna zmienna w EmailJS
+
+        // Zdjęcie
+        photo_url: uploadedPhotoUrl || "Brak załączonego zdjęcia"
+    };
+
+    console.log("Wysyłanie danych do EmailJS:", templateParams);
+
     try {
-      await emailjs.sendForm(
+      // Używamy .send() zamiast .sendForm() dla większej kontroli nad danymi
+      await emailjs.send(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
-        formRef.current,
+        templateParams,
         APP_CONFIG.publicKey
       );
       
@@ -221,10 +251,7 @@ export const IssueForm: React.FC<any> = () => {
       <div className="p-8">
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
           
-          {/* EmailJS Hidden Fields */}
-          <input type="hidden" name="urgency" value={formState.urgency} />
-          <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
-          <input type="hidden" name="photo_url" value={uploadedPhotoUrl} />
+          {/* USUNIĘTO UKRYTE INPUTY - dane są teraz wysyłane bezpośrednio z obiektu w JS */}
 
           {/* Sekcja Danych Kontaktowych */}
           <section>
