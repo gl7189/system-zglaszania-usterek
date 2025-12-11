@@ -9,7 +9,7 @@ declare module '*.jpg';
 
 interface ImportMetaEnv {
   readonly VITE_RECEIVER_EMAIL: string;
-  // VERCEL_ENV jest teraz obsługiwany przez __VERCEL_ENV__
+  // Pozwalamy na dowolne inne klucze, żeby nie blokować builda
   [key: string]: any;
 }
 

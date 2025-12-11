@@ -1,4 +1,3 @@
-import React from 'react';
 import { IssueForm } from './components/IssueForm';
 import { APP_CONFIG, APP_VERSION } from './config';
 
