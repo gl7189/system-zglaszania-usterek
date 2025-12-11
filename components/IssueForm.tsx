@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
-  Wrench, Link as LinkIcon, Loader2 
+  Wrench, Link as LinkIcon, Loader2, AlertTriangle
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
@@ -9,6 +9,9 @@ import { APP_CONFIG } from '../config';
 
 // Limit rozmiaru przed wysłaniem na ImgBB (dla wydajności) - 5MB
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
+
+// Oficjalny mail produkcyjny do porównania
+const PRODUCTION_EMAIL = 'administrator5@zarzadca.wroclaw.pl';
 
 export const IssueForm: React.FC<any> = () => {
   const [formState, setFormState] = useState<IssueFormState>({
@@ -32,6 +35,23 @@ export const IssueForm: React.FC<any> = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Sprawdzamy czy działamy w trybie deweloperskim (inny mail niż produkcyjny)
+  const isDevMode = APP_CONFIG.receiverEmail !== PRODUCTION_EMAIL;
+
+  // DEBUGGING: Logowanie konfiguracji przy starcie
+  useEffect(() => {
+    console.group("🔧 Konfiguracja Formularza");
+    console.log("Tryb developerski:", isDevMode);
+    console.log("Docelowy email w kodzie (to_email):", APP_CONFIG.receiverEmail);
+    console.log("Czy klucz ImgBB jest ustawiony?", !!APP_CONFIG.imgbbApiKey);
+    if (isDevMode) {
+        console.warn("UWAGA: Maile będą wysyłane na adres testowy, a nie do zarządcy!");
+    } else {
+        console.log("OK: Tryb produkcyjny aktywny. Maile idą do zarządcy.");
+    }
+    console.groupEnd();
+  }, [isDevMode]);
 
   const validate = (): boolean => {
     const newErrors: ValidationErrors = {};
@@ -173,192 +193,4 @@ export const IssueForm: React.FC<any> = () => {
         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <CheckCircle className="w-8 h-8 text-green-600" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Zgłoszenie wysłane!</h2>
-        <p className="text-slate-600 mb-6">
-          Administrator otrzymał powiadomienie.
-        </p>
-        <button onClick={() => setSubmitStatus('idle')} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg">
-          Wyślij kolejne
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-3xl mx-auto">
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-4">
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Wrench className="w-6 h-6 text-blue-600" />
-            Zgłaszanie Usterki
-          </h1>
-        </div>
-
-        <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* HONEYPOT FIELD - Niewidoczne dla użytkownika, widoczne dla bota */}
-          <div className="hidden" aria-hidden="true">
-            <input 
-              type="text" 
-              name="website_url_check" 
-              value={honeyPot}
-              onChange={(e) => setHoneyPot(e.target.value)}
-              tabIndex={-1} 
-              autoComplete="off"
-            />
-          </div>
-
-          <input type="hidden" name="to_email" value={APP_CONFIG.receiverEmail} />
-          <input type="hidden" name="name" value={formState.senderName} />
-          <input type="hidden" name="email" value={formState.senderEmail} />
-          <input type="hidden" name="message" value={`${formState.description}${uploadedPhotoUrl ? `\n\n--- ZDJĘCIE USTERKI ---\n${uploadedPhotoUrl}` : ''}`} />
-          <input type="hidden" name="attachment_link" value={uploadedPhotoUrl} />
-
-          {/* Dane osobowe */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Nadawca</label>
-              <input 
-                type="text" 
-                name="from_name" 
-                value={formState.senderName} 
-                onChange={e => setFormState(prev => ({ ...prev, senderName: e.target.value }))} 
-                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
-                placeholder="Jan Kowalski" 
-              />
-              {errors.senderName && <p className="text-red-500 text-xs">{errors.senderName}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <input 
-                type="email" 
-                name="from_email" 
-                value={formState.senderEmail} 
-                onChange={e => setFormState(prev => ({ ...prev, senderEmail: e.target.value }))} 
-                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
-                placeholder="email@przyklad.pl" 
-              />
-              {errors.senderEmail && <p className="text-red-500 text-xs">{errors.senderEmail}</p>}
-            </div>
-          </div>
-
-          {/* Lokalizacja i Kategoria */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Miejsce</label>
-              <input 
-                type="text" 
-                name="location" 
-                value={formState.location} 
-                onChange={e => setFormState(prev => ({ ...prev, location: e.target.value }))} 
-                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
-                placeholder="np. klatka 26" 
-              />
-              {errors.location && <p className="text-red-500 text-xs">{errors.location}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Kategoria</label>
-              <select 
-                name="category" 
-                value={formState.category} 
-                onChange={e => setFormState(prev => ({ ...prev, category: e.target.value as IssueCategory }))} 
-                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2"
-              >
-                <option value="">Wybierz...</option>
-                {Object.values(IssueCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-              </select>
-              {errors.category && <p className="text-red-500 text-xs">{errors.category}</p>}
-            </div>
-          </div>
-
-          {/* Pilność */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Pilność</label>
-            <div className="flex flex-wrap gap-3">
-              {Object.values(UrgencyLevel).map((level) => (
-                <label key={level} className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border ${formState.urgency === level ? urgencyColor[level] : 'border-slate-200 bg-white'} hover:bg-slate-50`}>
-                  <input 
-                    type="radio" 
-                    name="urgency" 
-                    value={level} 
-                    checked={formState.urgency === level} 
-                    onChange={() => setFormState(prev => ({ ...prev, urgency: level }))} 
-                    className="hidden" 
-                  />
-                  <span className={`font-medium text-sm ${formState.urgency === level ? '' : 'text-slate-600'}`}>{level}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Opis */}
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-sm font-medium text-slate-700">Opis</label>
-            </div>
-            <textarea 
-              value={formState.description} 
-              onChange={e => setFormState(prev => ({ ...prev, description: e.target.value }))} 
-              rows={5} 
-              maxLength={1000}
-              className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2" 
-            />
-            {errors.description && <p className="text-red-500 text-xs">{errors.description}</p>}
-          </div>
-
-          {/* Zdjęcia */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcie</label>
-            <p className="text-xs text-blue-600 mb-2">
-              Zdjęcie zostanie automatycznie wysłane na bezpieczny hosting, a administrator otrzyma link.
-            </p>
-            
-            {formState.photos.length === 0 ? (
-              <div className={`border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition-colors ${isUploading ? 'bg-slate-50 opacity-50 cursor-wait' : 'cursor-pointer hover:bg-slate-50'}`} onClick={() => !isUploading && fileInputRef.current?.click()}>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange} 
-                  accept="image/png, image/jpeg" 
-                  className="hidden" 
-                />
-                {isUploading ? (
-                  <div className="flex flex-col items-center">
-                      <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
-                      <p className="text-sm mt-2 text-blue-600">Wysyłanie na serwer...</p>
-                  </div>
-                ) : (
-                  <>
-                    <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-                    <p className="text-sm mt-2 text-slate-600">Kliknij by dodać zdjęcie</p>
-                  </>
-                )}
-              </div>
-            ) : null}
-
-            {/* Podgląd */}
-            {formState.photos.length > 0 && (
-                <div className="mt-2 relative bg-slate-100 rounded border p-2">
-                  <div className="flex items-center gap-3">
-                     <img src={URL.createObjectURL(formState.photos[0])} alt="" className="h-16 w-16 object-cover rounded" />
-                     <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{formState.photos[0].name}</p>
-                        {uploadedPhotoUrl ? (
-                            <p className="text-xs text-green-600 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Link dołączony do zgłoszenia</p>
-                        ) : (
-                            <p className="text-xs text-amber-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> Generowanie linku...</p>
-                        )}
-                     </div>
-                     <button type="button" onClick={removePhoto} className="p-2 text-slate-400 hover:text-red-500"><X className="w-5 h-5"/></button>
-                  </div>
-                </div>
-            )}
-          </div>
-
-          <button type="submit" disabled={isSubmitting || isUploading || (formState.photos.length > 0 && !uploadedPhotoUrl)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            {isSubmitting ? <Loader2 className="animate-spin" /> : <Send />} Wyślij zgłoszenie
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
+        <h2 className="text-2xl font-bold text-slate-90
