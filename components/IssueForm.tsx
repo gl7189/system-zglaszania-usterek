@@ -42,18 +42,16 @@ export const IssueForm: React.FC<any> = () => {
 
   // DEBUGGING: Logowanie konfiguracji przy starcie
   useEffect(() => {
-    console.group("🔧 Konfiguracja Formularza");
-    console.log("Środowisko Vercel (VERCEL_ENV):", import.meta.env.VERCEL_ENV || 'local/unknown');
-    console.log("Tryb developerski (env != prod):", isDevMode);
-    console.log("Adres docelowy (używany):", APP_CONFIG.receiverEmail);
-    console.log("Adres produkcyjny (wzorzec):", PRODUCTION_EMAIL);
-    
+    // ZMIANA: Logujemy tylko w trybie developerskim
     if (isDevMode) {
+        console.group("🔧 Konfiguracja Formularza");
+        console.log("Środowisko Vercel (VERCEL_ENV):", import.meta.env.VERCEL_ENV || 'local/unknown');
+        console.log("Tryb developerski (env != prod):", isDevMode);
+        console.log("Adres docelowy (używany):", APP_CONFIG.receiverEmail);
+        console.log("Adres produkcyjny (wzorzec):", PRODUCTION_EMAIL);
         console.warn("UWAGA: Jesteś w trybie testowym. Maile nie trafią do zarządcy.");
-    } else {
-        console.log("OK: Tryb produkcyjny. Zgłoszenia trafią do zarządcy.");
+        console.groupEnd();
     }
-    console.groupEnd();
   }, [isDevMode]);
 
   const validate = (): boolean => {
@@ -247,8 +245,6 @@ export const IssueForm: React.FC<any> = () => {
         <h2 className="text-2xl font-bold text-slate-900 mb-2">Zgłoszenie wysłane!</h2>
         <p className="text-slate-600 mb-6">
           Dziękujemy za zgłoszenie. Administrator został powiadomiony.
-          <br/>
-          Kopia potwierdzenia powinna dotrzeć na Twój adres email.
         </p>
         <button
           onClick={() => setSubmitStatus('idle')}
@@ -321,7 +317,8 @@ export const IssueForm: React.FC<any> = () => {
                   value={formState.location}
                   onChange={e => setFormState(prev => ({ ...prev, location: e.target.value }))}
                   className={`w-full p-2.5 rounded-lg border ${errors.location ? 'border-red-500' : 'border-slate-300'} focus:ring-2 focus:ring-blue-500`}
-                  placeholder="np. Klatka schodowa, Piętro 2"
+                  // ZMIANA PLACEHOLDERA
+                  placeholder="np. klatka 26, parter"
                 />
                 {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location}</p>}
               </div>
