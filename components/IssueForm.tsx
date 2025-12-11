@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Send, CheckCircle, Upload, X, 
+  Send, CheckCircle, 
   Loader2, AlertTriangle, Image as ImageIcon, Trash2, ShieldCheck
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
@@ -481,8 +481,9 @@ export const IssueForm: React.FC<any> = () => {
                  </label>
                  <p className="text-slate-500 mt-1 text-xs leading-relaxed">
                    Administratorem danych osobowych jest Wspólnota Mieszkaniowa Aleja Śliwowa 26-32. 
-                   Twoje dane (imię, nazwisko, email) są przetwarzane wyłącznie w celu obsługi niniejszego zgłoszenia usterki. 
-                   Podanie danych jest dobrowolne, ale niezbędne do przyjęcia zgłoszenia.
+                   Podmiotem przetwarzającym dane w jej imieniu jest zarządca: <span className="font-semibold">Domus Sp. z o.o. Sp.k.</span>, ul. Grabiszyńska 163 (IV piętro), NIP: 8971779131. 
+                   Twoje dane przetwarzane są wyłącznie w celu obsługi niniejszego zgłoszenia usterki. 
+                   Podanie danych jest dobrowolne, ale niezbędne do realizacji zgłoszenia.
                  </p>
                  {errors.rodo && <p className="text-red-500 text-xs mt-1 font-medium">Musisz zaznaczyć to pole, aby wysłać zgłoszenie.</p>}
                </div>
