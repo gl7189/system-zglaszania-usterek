@@ -34,6 +34,7 @@ export interface IssueFormState {
   urgency: UrgencyLevel;
   description: string;
   photos: File[];
+  rodoAccepted: boolean;
 }
 
 export interface ValidationErrors {
@@ -44,4 +45,5 @@ export interface ValidationErrors {
   description?: string;
   photos?: string;
   config?: string;
+  rodo?: string;
 }

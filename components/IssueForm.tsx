@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
-  Loader2, AlertTriangle, Image as ImageIcon, Trash2
+  Loader2, AlertTriangle, Image as ImageIcon, Trash2, ShieldCheck
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
@@ -20,7 +20,8 @@ export const IssueForm: React.FC<any> = () => {
     category: '',
     urgency: UrgencyLevel.NORMAL,
     description: '',
-    photos: []
+    photos: [],
+    rodoAccepted: false
   });
 
   // Stan dla Honeypot (Pułapka na boty)
@@ -68,6 +69,12 @@ export const IssueForm: React.FC<any> = () => {
     // Zmieniono limit minimalny na 10 znaków
     if (formState.description.length < 10) { newErrors.description = 'Min. 10 znaków'; isValid = false; }
     if (formState.description.length > 1000) { newErrors.description = 'Max. 1000 znaków'; isValid = false; }
+    
+    // Walidacja RODO
+    if (!formState.rodoAccepted) {
+        newErrors.rodo = 'Wymagana zgoda';
+        isValid = false;
+    }
 
     if (uploadedPhotoUrls.length > 0 && (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey === 'YOUR_IMGBB_API_KEY_HERE')) {
         alert("Błąd konfiguracji: Brak klucza API ImgBB w pliku config.ts.");
@@ -219,7 +226,7 @@ export const IssueForm: React.FC<any> = () => {
       
       setFormState({
         senderName: '', senderEmail: '', location: '', category: '',
-        urgency: UrgencyLevel.NORMAL, description: '', photos: []
+        urgency: UrgencyLevel.NORMAL, description: '', photos: [], rodoAccepted: false
       });
       setUploadedPhotoUrls([]); // Reset zdjęć
       
@@ -455,6 +462,33 @@ export const IssueForm: React.FC<any> = () => {
             </div>
           </section>
 
+          {/* Sekcja RODO */}
+          <section className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+            <div className="flex items-start gap-3">
+               <div className="flex items-center h-6">
+                 <input
+                   id="rodo"
+                   name="rodo"
+                   type="checkbox"
+                   checked={formState.rodoAccepted}
+                   onChange={e => setFormState(prev => ({ ...prev, rodoAccepted: e.target.checked }))}
+                   className={`h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer ${errors.rodo ? 'ring-2 ring-red-500 ring-offset-1' : ''}`}
+                 />
+               </div>
+               <div className="text-sm">
+                 <label htmlFor="rodo" className="font-medium text-slate-800 cursor-pointer select-none">
+                   Oświadczam, że zapoznałem/am się z informacją o administratorze danych. *
+                 </label>
+                 <p className="text-slate-500 mt-1 text-xs leading-relaxed">
+                   Administratorem danych osobowych jest Wspólnota Mieszkaniowa Aleja Śliwowa 26-32. 
+                   Twoje dane (imię, nazwisko, email) są przetwarzane wyłącznie w celu obsługi niniejszego zgłoszenia usterki. 
+                   Podanie danych jest dobrowolne, ale niezbędne do przyjęcia zgłoszenia.
+                 </p>
+                 {errors.rodo && <p className="text-red-500 text-xs mt-1 font-medium">Musisz zaznaczyć to pole, aby wysłać zgłoszenie.</p>}
+               </div>
+            </div>
+          </section>
+
           {/* Honeypot Field (Hidden) */}
           <div className="hidden">
              <label>Nie wypełniaj tego pola: <input type="text" name="website_url_hp" value={honeyPot} onChange={(e) => setHoneyPot(e.target.value)} /></label>
@@ -482,8 +516,9 @@ export const IssueForm: React.FC<any> = () => {
                 </>
               )}
             </button>
-            <p className="text-center text-xs text-slate-400 mt-4">
-               Twoje zgłoszenie zostanie przesłane bezpośrednio do zarządcy nieruchomości.
+            <p className="text-center text-xs text-slate-400 mt-4 flex items-center justify-center gap-1">
+               <ShieldCheck className="w-3 h-3" />
+               Połączenie jest szyfrowane. Twoje dane są bezpieczne.
             </p>
           </div>
 
