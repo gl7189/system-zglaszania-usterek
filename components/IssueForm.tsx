@@ -152,8 +152,13 @@ export const IssueForm: React.FC<any> = () => {
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
+    // Modyfikacja opisu - doklejamy link do zdjęcia na końcu treści wiadomości
+    // Dzięki temu link pojawi się w mailu nawet jeśli szablon nie ma zmiennej {{photo_url}}
+    const fullDescription = uploadedPhotoUrl 
+        ? `${formState.description}\n\n--- ZAŁĄCZONE ZDJĘCIE ---\n${uploadedPhotoUrl}`
+        : formState.description;
+
     // Przygotowanie danych do wysyłki
-    // Mapujemy pola formularza na różne warianty nazw, aby pasowały do każdego szablonu EmailJS
     const templateParams = {
         // Odbiorca
         to_email: APP_CONFIG.receiverEmail,
@@ -173,11 +178,11 @@ export const IssueForm: React.FC<any> = () => {
         category: formState.category,
         urgency: formState.urgency,
 
-        // Opis (różne warianty)
-        description: formState.description,
-        message: formState.description,    // Często domyślna zmienna w EmailJS
+        // Opis (z doklejonym linkiem)
+        description: fullDescription,
+        message: fullDescription,    // Często domyślna zmienna w EmailJS
 
-        // Zdjęcie
+        // Zdjęcie (też wysyłamy osobno, dla pewności)
         photo_url: uploadedPhotoUrl || "Brak załączonego zdjęcia"
     };
 
@@ -450,4 +455,4 @@ export const IssueForm: React.FC<any> = () => {
       </div>
     </div>
   );
-};
+}
