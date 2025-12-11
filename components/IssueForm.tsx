@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, CheckCircle, Upload, X, 
-  Wrench, Link as LinkIcon, Loader2, AlertTriangle
+  Loader2, AlertTriangle, Image as ImageIcon, Trash2
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
@@ -9,6 +9,8 @@ import { APP_CONFIG, PRODUCTION_EMAIL } from '../config';
 
 // Limit rozmiaru przed wysłaniem na ImgBB (dla wydajności) - 5MB
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
+// Maksymalna liczba zdjęć
+const MAX_PHOTOS = 5;
 
 export const IssueForm: React.FC<any> = () => {
   const [formState, setFormState] = useState<IssueFormState>({
@@ -24,7 +26,9 @@ export const IssueForm: React.FC<any> = () => {
   // Stan dla Honeypot (Pułapka na boty)
   const [honeyPot, setHoneyPot] = useState('');
 
-  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string>('');
+  // ZMIANA: Tablica URL zamiast pojedynczego stringa
+  const [uploadedPhotoUrls, setUploadedPhotoUrls] = useState<string[]>([]);
+  
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -65,7 +69,7 @@ export const IssueForm: React.FC<any> = () => {
     if (formState.description.length < 10) { newErrors.description = 'Min. 10 znaków'; isValid = false; }
     if (formState.description.length > 1000) { newErrors.description = 'Max. 1000 znaków'; isValid = false; }
 
-    if (formState.photos.length > 0 && (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey === 'YOUR_IMGBB_API_KEY_HERE')) {
+    if (uploadedPhotoUrls.length > 0 && (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey === 'YOUR_IMGBB_API_KEY_HERE')) {
         alert("Błąd konfiguracji: Brak klucza API ImgBB w pliku config.ts.");
         isValid = false;
     }
@@ -94,41 +98,49 @@ export const IssueForm: React.FC<any> = () => {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    if (file.size > MAX_UPLOAD_SIZE) {
-        alert("Plik jest za duży (max 5MB)");
+    // Sprawdzenie limitu ilości zdjęć
+    if (uploadedPhotoUrls.length + files.length > MAX_PHOTOS) {
+        alert(`Możesz dodać maksymalnie ${MAX_PHOTOS} zdjęć.`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
+    }
+
+    // Walidacja rozmiaru dla wszystkich plików
+    for (let i = 0; i < files.length; i++) {
+        if (files[i].size > MAX_UPLOAD_SIZE) {
+            alert(`Plik ${files[i].name} jest za duży (max 5MB).`);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
     }
 
     setIsUploading(true);
     try {
-        setFormState(prev => ({ ...prev, photos: [file] }));
-
         if (!APP_CONFIG.imgbbApiKey || APP_CONFIG.imgbbApiKey.includes('YOUR_IMGBB')) {
             throw new Error("Brak klucza API ImgBB w konfiguracji.");
         }
 
-        const url = await uploadToImgBB(file);
-        setUploadedPhotoUrl(url);
-        console.log("Zdjęcie wgrane:", url);
+        // Upload równoległy (wszystkie naraz)
+        const uploadPromises = Array.from(files).map(file => uploadToImgBB(file));
+        const newUrls = await Promise.all(uploadPromises);
+        
+        setUploadedPhotoUrls(prev => [...prev, ...newUrls]);
+        console.log("Wgrano nowe zdjęcia:", newUrls);
 
     } catch (err: any) {
         console.error("Upload error:", err);
-        alert(`Nie udało się wgrać zdjęcia: ${err.message}`);
-        setFormState(prev => ({ ...prev, photos: [] }));
-        setUploadedPhotoUrl('');
-        if (fileInputRef.current) fileInputRef.current.value = '';
+        alert(`Nie udało się wgrać zdjęć: ${err.message}`);
     } finally {
         setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const removePhoto = () => {
-    setFormState(prev => ({ ...prev, photos: [] }));
-    setUploadedPhotoUrl('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const removePhoto = (indexToRemove: number) => {
+    setUploadedPhotoUrls(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -145,32 +157,38 @@ export const IssueForm: React.FC<any> = () => {
     if (!validate()) return;
     
     if (isUploading) {
-        alert("Poczekaj na zakończenie wysyłania zdjęcia.");
+        alert("Poczekaj na zakończenie wysyłania zdjęć.");
         return;
     }
 
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
-    // Modyfikacja opisu - doklejamy link do zdjęcia na końcu treści wiadomości
-    // Dzięki temu link pojawi się w mailu nawet jeśli szablon nie ma zmiennej {{photo_url}}
-    const fullDescription = uploadedPhotoUrl 
-        ? `${formState.description}\n\n--- ZAŁĄCZONE ZDJĘCIE ---\n${uploadedPhotoUrl}`
-        : formState.description;
+    // Przygotowanie sekcji ze zdjęciami do treści maila
+    let photosSection = "";
+    if (uploadedPhotoUrls.length > 0) {
+        photosSection = `\n\n--- ZAŁĄCZONE ZDJĘCIA (${uploadedPhotoUrls.length}) ---\n`;
+        uploadedPhotoUrls.forEach((url, index) => {
+            photosSection += `${index + 1}. ${url}\n`;
+        });
+    }
+
+    // Modyfikacja opisu - doklejamy listę linków
+    const fullDescription = formState.description + photosSection;
 
     // Przygotowanie danych do wysyłki
     const templateParams = {
         // Odbiorca
         to_email: APP_CONFIG.receiverEmail,
 
-        // Dane zgłaszającego (różne warianty)
+        // Dane zgłaszającego
         senderName: formState.senderName,
-        from_name: formState.senderName,   // Często domyślna zmienna w EmailJS
+        from_name: formState.senderName,
         name: formState.senderName,
 
-        // Email zgłaszającego (do reply-to)
+        // Email zgłaszającego
         senderEmail: formState.senderEmail,
-        reply_to: formState.senderEmail,   // Wymagane, aby "Odpowiedz" szło do lokatora
+        reply_to: formState.senderEmail,
         from_email: formState.senderEmail,
 
         // Szczegóły
@@ -178,18 +196,17 @@ export const IssueForm: React.FC<any> = () => {
         category: formState.category,
         urgency: formState.urgency,
 
-        // Opis (z doklejonym linkiem)
+        // Opis (z listą linków)
         description: fullDescription,
-        message: fullDescription,    // Często domyślna zmienna w EmailJS
+        message: fullDescription,
 
-        // Zdjęcie (też wysyłamy osobno, dla pewności)
-        photo_url: uploadedPhotoUrl || "Brak załączonego zdjęcia"
+        // Główne zdjęcie (pierwsze z listy lub placeholder) - dla kompatybilności
+        photo_url: uploadedPhotoUrls[0] || "Brak załączonych zdjęć"
     };
 
     console.log("Wysyłanie danych do EmailJS:", templateParams);
 
     try {
-      // Używamy .send() zamiast .sendForm() dla większej kontroli nad danymi
       await emailjs.send(
         APP_CONFIG.serviceId,
         APP_CONFIG.templateId,
@@ -204,7 +221,7 @@ export const IssueForm: React.FC<any> = () => {
         senderName: '', senderEmail: '', location: '', category: '',
         urgency: UrgencyLevel.NORMAL, description: '', photos: []
       });
-      setUploadedPhotoUrl('');
+      setUploadedPhotoUrls([]); // Reset zdjęć
       
     } catch (error: any) {
       console.error('FAILED...', error);
@@ -256,8 +273,6 @@ export const IssueForm: React.FC<any> = () => {
       <div className="p-8">
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
           
-          {/* USUNIĘTO UKRYTE INPUTY - dane są teraz wysyłane bezpośrednio z obiektu w JS */}
-
           {/* Sekcja Danych Kontaktowych */}
           <section>
             <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
@@ -375,47 +390,69 @@ export const IssueForm: React.FC<any> = () => {
 
           {/* Zdjęcia */}
           <section>
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">
-              5. Zdjęcie (Opcjonalne)
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2 flex items-center justify-between">
+              <span>5. Zdjęcia (Opcjonalne)</span>
+              <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                {uploadedPhotoUrls.length} / {MAX_PHOTOS}
+              </span>
             </h3>
             
-            <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:bg-slate-50 transition-colors relative">
-               
-               {isUploading ? (
-                   <div className="flex flex-col items-center justify-center py-4">
-                       <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-                       <span className="text-sm text-slate-600">Wysyłanie zdjęcia...</span>
-                   </div>
-               ) : uploadedPhotoUrl ? (
-                   <div className="relative inline-block">
-                       <img src={uploadedPhotoUrl} alt="Podgląd" className="max-h-48 rounded-lg shadow-sm" />
-                       <button 
-                         type="button"
-                         onClick={removePhoto}
-                         className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow-sm"
-                       >
-                         <X className="w-4 h-4" />
-                       </button>
-                       <div className="mt-2 text-xs text-green-600 flex items-center justify-center gap-1 font-medium">
-                           <CheckCircle className="w-3 h-3" /> Zdjęcie dodane
-                       </div>
-                   </div>
-               ) : (
-                  <>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept="image/*"
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    <div className="flex flex-col items-center pointer-events-none">
-                        <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                        <p className="text-sm text-slate-600 font-medium">Kliknij lub upuść zdjęcie tutaj</p>
-                        <p className="text-xs text-slate-400 mt-1">Max 5MB (JPG, PNG)</p>
+            <div className="space-y-4">
+                {/* Lista wgranych zdjęć */}
+                {uploadedPhotoUrls.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {uploadedPhotoUrls.map((url, index) => (
+                            <div key={url} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                                <img src={url} alt={`Załącznik ${index + 1}`} className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <button 
+                                        type="button"
+                                        onClick={() => removePhoto(index)}
+                                        className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transition-colors shadow-lg"
+                                        title="Usuń zdjęcie"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="absolute bottom-1 right-1 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center shadow-sm">
+                                    <CheckCircle className="w-3 h-3 mr-0.5" /> Wgrane
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                  </>
-               )}
+                )}
+
+                {/* Obszar Uploadu */}
+                {uploadedPhotoUrls.length < MAX_PHOTOS && (
+                    <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:bg-slate-50 transition-colors relative">
+                        {isUploading ? (
+                            <div className="flex flex-col items-center justify-center py-4">
+                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
+                                <span className="text-sm text-slate-600">Wysyłanie zdjęć...</span>
+                            </div>
+                        ) : (
+                            <>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileChange}
+                                    accept="image/*"
+                                    multiple // Pozwala na wybór wielu plików
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                />
+                                <div className="flex flex-col items-center pointer-events-none">
+                                    <div className="bg-blue-50 p-3 rounded-full mb-3">
+                                        <ImageIcon className="w-6 h-6 text-blue-600" />
+                                    </div>
+                                    <p className="text-sm text-slate-700 font-medium">Kliknij, aby dodać zdjęcia</p>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        Możesz dodać jeszcze {MAX_PHOTOS - uploadedPhotoUrls.length} zdjęcie(a). Max 5MB/plik.
+                                    </p>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
           </section>
 
