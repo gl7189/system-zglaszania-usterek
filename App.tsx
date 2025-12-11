@@ -1,6 +1,6 @@
 import React from 'react';
 import { IssueForm } from './components/IssueForm';
-import { APP_CONFIG } from './config';
+import { APP_CONFIG, APP_VERSION } from './config';
 
 export default function App() {
   return (
@@ -33,6 +33,9 @@ export default function App() {
         <div className="max-w-3xl mx-auto px-4 text-center">
           <p className="text-sm text-slate-500">
             &copy; 2025 Zarząd Wspólnoty Mieszkaniowej Aleja Śliwowa 26-32. Wszystkie prawa zastrzeżone.
+          </p>
+          <p className="text-xs text-slate-400 mt-2 font-mono">
+            v{APP_VERSION}
           </p>
         </div>
       </footer>

@@ -2,6 +2,9 @@
 // Stała z adresem produkcyjnym (Zarządca)
 export const PRODUCTION_EMAIL = 'administrator5@zarzadca.wroclaw.pl';
 
+// Wersja aplikacji (wyświetlana w stopce)
+export const APP_VERSION = '1.1.0';
+
 // Sprawdzamy środowisko Vercel używając zdefiniowanej stałej globalnej
 // Używamy typeof dla bezpieczeństwa, choć define w Vite powinno to obsłużyć
 const ENV_NAME = typeof __VERCEL_ENV__ !== 'undefined' ? __VERCEL_ENV__ : 'development';
