@@ -12,7 +12,7 @@ export default function App() {
           {/* Logo Wspólnoty - teraz klikalne (resetuje stan/odświeża) */}
           <a href="/" title="Strona główna" className="inline-block hover:opacity-90 transition-opacity">
             <img 
-              src="https://i.ibb.co/0j3f54wt/logo-sgu.png" 
+              src="https://i.ibb.co/35dqrC0H/logo-as2632.png" 
               alt="Logo Wspólnoty - Aleja Śliwowa" 
               className="h-24 mx-auto mb-6 object-contain" 
             />
