@@ -39,6 +39,7 @@ export const IssueForm: React.FC<any> = () => {
   // DEBUGGING: Logowanie konfiguracji przy starcie
   useEffect(() => {
     console.group("🔧 Konfiguracja Formularza");
+    console.log("Środowisko Vercel (VERCEL_ENV):", import.meta.env.VERCEL_ENV || 'local/unknown');
     console.log("Tryb developerski (env != prod):", isDevMode);
     console.log("Adres docelowy (używany):", APP_CONFIG.receiverEmail);
     console.log("Adres produkcyjny (wzorzec):", PRODUCTION_EMAIL);
