@@ -278,22 +278,25 @@ export const IssueForm: React.FC<any> = () => {
                 <h3 className="text-lg font-medium text-amber-700 mb-4">(Poza godzinami pracy biura)</h3>
                 
                 <div className="bg-amber-50 border-l-4 border-amber-500 p-4 text-left mb-6 rounded-r-lg">
-                  <p className="text-slate-700 text-sm mb-3">
+                  <p className="text-slate-700 text-sm mb-3 text-justify">
                     Twoje zgłoszenie dotarło do skrzynki mailowej administratora, ale biuro jest obecnie zamknięte. 
                     Zgłoszenie zostanie odczytane w najbliższy dzień roboczy po godzinie 8:00.
                   </p>
-                  <p className="text-slate-800 text-sm font-semibold">
-                    Jeśli sprawa jest pilna (awaria zagrażająca bezpieczeństwu lub mieniu), skontaktuj się z dyżurnym:
+                  <p className="text-slate-800 text-sm font-semibold text-justify">
+                    Jeśli sprawa jest pilna (awaria zagrażająca bezpieczeństwu lub mieniu), skontaktuj się z Konserwatorem Dyżurnym:
                   </p>
                 </div>
 
-                <div className="inline-flex items-center gap-3 bg-slate-800 text-white px-6 py-4 rounded-xl shadow-md mb-6 hover:bg-slate-700 transition-colors">
-                    <Phone className="w-6 h-6 animate-pulse" />
+                <a 
+                   href={`tel:${EMERGENCY_PHONE.replace(/-/g, '')}`} 
+                   className="inline-flex items-center gap-3 bg-slate-800 text-white px-6 py-4 rounded-xl shadow-md mb-6 hover:bg-slate-700 transition-colors w-full sm:w-auto justify-center group"
+                >
+                    <Phone className="w-6 h-6 animate-pulse group-hover:scale-110 transition-transform" />
                     <div className="text-left">
                         <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">{EMERGENCY_CONTACT_NAME}</div>
                         <div className="text-xl font-bold font-mono tracking-widest">{EMERGENCY_PHONE}</div>
                     </div>
-                </div>
+                </a>
             </div>
         )}
 
