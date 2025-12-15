@@ -1,11 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, CheckCircle, 
-  Loader2, AlertTriangle, Image as ImageIcon, Trash2, ShieldCheck
+  Loader2, AlertTriangle, Image as ImageIcon, Trash2, ShieldCheck,
+  Clock, Phone, Info
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { IssueFormState, IssueCategory, UrgencyLevel, ValidationErrors } from '../types';
-import { APP_CONFIG, PRODUCTION_EMAIL } from '../config';
+import { 
+  APP_CONFIG, 
+  PRODUCTION_EMAIL, 
+  EMERGENCY_CONTACT_NAME, 
+  EMERGENCY_PHONE, 
+  OFFICE_HOURS 
+} from '../config';
 
 // Limit rozmiaru przed wysłaniem na ImgBB (dla wydajności) - 5MB
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
@@ -43,10 +50,8 @@ export const IssueForm: React.FC<any> = () => {
 
   // DEBUGGING: Logowanie konfiguracji przy starcie
   useEffect(() => {
-    // ZMIANA: Logujemy tylko w trybie developerskim
     if (isDevMode) {
         console.group("🔧 Konfiguracja Formularza");
-        // Używamy globalnej stałej __VERCEL_ENV__
         const envName = typeof __VERCEL_ENV__ !== 'undefined' ? __VERCEL_ENV__ : 'unknown';
         console.log("Środowisko Vercel (VERCEL_ENV):", envName);
         console.log("Tryb developerski (env != prod):", isDevMode);
@@ -56,6 +61,20 @@ export const IssueForm: React.FC<any> = () => {
         console.groupEnd();
     }
   }, [isDevMode]);
+
+  // Funkcja sprawdzająca czy biuro jest otwarte w TYM MOMENCIE
+  const isOfficeOpen = () => {
+    const now = new Date();
+    const day = now.getDay(); // 0 = Niedziela, 1 = Poniedziałek, ..., 6 = Sobota
+    const hour = now.getHours();
+
+    // Sprawdzamy dzień tygodnia (Pn-Pt)
+    const isWorkDay = OFFICE_HOURS.DAYS.includes(day);
+    // Sprawdzamy godziny (>= 8:00 i < 15:00)
+    const isWorkHour = hour >= OFFICE_HOURS.START && hour < OFFICE_HOURS.END;
+
+    return isWorkDay && isWorkHour;
+  };
 
   const validate = (): boolean => {
     const newErrors: ValidationErrors = {};
@@ -180,34 +199,21 @@ export const IssueForm: React.FC<any> = () => {
         });
     }
 
-    // Modyfikacja opisu - doklejamy listę linków
     const fullDescription = formState.description + photosSection;
 
-    // Przygotowanie danych do wysyłki
     const templateParams = {
-        // Odbiorca
         to_email: APP_CONFIG.receiverEmail,
-
-        // Dane zgłaszającego
         senderName: formState.senderName,
         from_name: formState.senderName,
         name: formState.senderName,
-
-        // Email zgłaszającego
         senderEmail: formState.senderEmail,
         reply_to: formState.senderEmail,
         from_email: formState.senderEmail,
-
-        // Szczegóły
         location: formState.location,
         category: formState.category,
         urgency: formState.urgency,
-
-        // Opis (z listą linków)
         description: fullDescription,
         message: fullDescription,
-
-        // Główne zdjęcie (pierwsze z listy lub placeholder) - dla kompatybilności
         photo_url: uploadedPhotoUrls[0] || "Brak załączonych zdjęć"
     };
 
@@ -228,7 +234,7 @@ export const IssueForm: React.FC<any> = () => {
         senderName: '', senderEmail: '', location: '', category: '',
         urgency: UrgencyLevel.NORMAL, description: '', photos: [], rodoAccepted: false
       });
-      setUploadedPhotoUrls([]); // Reset zdjęć
+      setUploadedPhotoUrls([]); 
       
     } catch (error: any) {
       console.error('FAILED...', error);
@@ -245,37 +251,97 @@ export const IssueForm: React.FC<any> = () => {
     [UrgencyLevel.EMERGENCY]: 'bg-red-100 border-red-200 text-red-800 animate-pulse'
   };
 
+  // --- EKRAN SUKCESU Z LOGIKĄ GODZIN PRACY ---
   if (submitStatus === 'success') {
+    const officeOpen = isOfficeOpen();
+
     return (
-      <div className="max-w-2xl mx-auto mt-10 p-8 bg-white rounded-xl shadow-lg text-center">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <CheckCircle className="w-8 h-8 text-green-600" />
+      <div className="max-w-2xl mx-auto mt-10 p-8 bg-white rounded-xl shadow-lg">
+        {officeOpen ? (
+            // SCENARIUSZ A: W godzinach pracy (Zielony sukces)
+            <div className="text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">Zgłoszenie wysłane!</h2>
+                <p className="text-slate-600 mb-6">
+                  Dziękujemy. Twoje zgłoszenie trafiło do administratora i zostanie wkrótce obsłużone.
+                </p>
+            </div>
+        ) : (
+            // SCENARIUSZ B: Poza godzinami (Pomarańczowe ostrzeżenie)
+            <div className="text-center">
+                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Clock className="w-8 h-8 text-amber-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-800 mb-2">Zgłoszenie wysłane</h2>
+                <h3 className="text-lg font-medium text-amber-700 mb-4">(Poza godzinami pracy biura)</h3>
+                
+                <div className="bg-amber-50 border-l-4 border-amber-500 p-4 text-left mb-6 rounded-r-lg">
+                  <p className="text-slate-700 text-sm mb-3">
+                    Twoje zgłoszenie dotarło do skrzynki mailowej administratora, ale biuro jest obecnie zamknięte. 
+                    Zgłoszenie zostanie odczytane w najbliższy dzień roboczy po godzinie 8:00.
+                  </p>
+                  <p className="text-slate-800 text-sm font-semibold">
+                    Jeśli sprawa jest pilna (awaria zagrażająca bezpieczeństwu lub mieniu), skontaktuj się z dyżurnym:
+                  </p>
+                </div>
+
+                <div className="inline-flex items-center gap-3 bg-slate-800 text-white px-6 py-4 rounded-xl shadow-md mb-6 hover:bg-slate-700 transition-colors">
+                    <Phone className="w-6 h-6 animate-pulse" />
+                    <div className="text-left">
+                        <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">{EMERGENCY_CONTACT_NAME}</div>
+                        <div className="text-xl font-bold font-mono tracking-widest">{EMERGENCY_PHONE}</div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        <div className="text-center">
+             <button
+              onClick={() => setSubmitStatus('idle')}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Wyślij kolejne zgłoszenie
+            </button>
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Zgłoszenie wysłane!</h2>
-        <p className="text-slate-600 mb-6">
-          Dziękujemy za zgłoszenie. Administrator został powiadomiony.
-        </p>
-        <button
-          onClick={() => setSubmitStatus('idle')}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-        >
-          Wyślij kolejne zgłoszenie
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-xl overflow-hidden">
+    <div className="max-w-3xl mx-auto space-y-6">
+      
       {/* Dev Mode Banner */}
       {isDevMode && (
-         <div className="bg-amber-50 border-b border-amber-200 p-3 text-xs text-amber-800 text-center flex items-center justify-center gap-2">
+         <div className="bg-amber-50 border-b border-amber-200 p-3 text-xs text-amber-800 text-center flex items-center justify-center gap-2 rounded-lg">
             <AlertTriangle className="w-4 h-4" />
-            <span>Tryb testowy: Zgłoszenia trafiają na mail skonfigurowany w środowisku (Vercel/Local), a nie do zarządcy.</span>
+            <span>Tryb testowy: Zgłoszenia trafiają na mail lokalny, a nie do zarządcy.</span>
          </div>
       )}
 
-      <div className="p-8">
+      {/* Info Panel: Zasady obsługi zgłoszeń */}
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-center">
+         <div className="bg-blue-100 p-2.5 rounded-full flex-shrink-0">
+             <Info className="w-6 h-6 text-blue-600" />
+         </div>
+         <div className="flex-grow">
+             <h3 className="text-sm font-bold text-blue-900 mb-1">Informacja o obsłudze zgłoszeń</h3>
+             <p className="text-sm text-blue-800 leading-relaxed">
+                 Zgłoszenia wysyłane przez ten formularz są obsługiwane przez administratora w dni robocze w godzinach <strong>8:00 – 15:00</strong>. 
+                 W przypadku nagłych awarii poza tymi godzinami oraz w dni wolne, prosimy o kontakt telefoniczny.
+             </p>
+         </div>
+         <div className="flex-shrink-0 w-full md:w-auto mt-2 md:mt-0">
+            <a href={`tel:${EMERGENCY_PHONE.replace(/-/g, '')}`} className="flex items-center justify-center gap-2 bg-white border border-blue-200 hover:border-blue-300 text-blue-900 px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm whitespace-nowrap">
+                <Phone className="w-4 h-4" />
+                {EMERGENCY_PHONE}
+            </a>
+         </div>
+      </div>
+
+      {/* Główny Formularz */}
+      <div className="bg-white rounded-xl shadow-xl overflow-hidden p-8">
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
           
           {/* Sekcja Danych Kontaktowych */}
