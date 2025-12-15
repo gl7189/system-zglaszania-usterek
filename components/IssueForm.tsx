@@ -321,22 +321,34 @@ export const IssueForm: React.FC<any> = () => {
       )}
 
       {/* Info Panel: Zasady obsługi zgłoszeń */}
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-center">
-         <div className="bg-blue-100 p-2.5 rounded-full flex-shrink-0">
-             <Info className="w-6 h-6 text-blue-600" />
-         </div>
-         <div className="flex-grow">
-             <h3 className="text-sm font-bold text-blue-900 mb-1">Informacja o obsłudze zgłoszeń</h3>
-             <p className="text-sm text-blue-800 leading-relaxed">
-                 Zgłoszenia wysyłane przez ten formularz są obsługiwane przez administratora w dni robocze w godzinach <strong>8:00 – 15:00</strong>. 
-                 W przypadku nagłych awarii poza tymi godzinami oraz w dni wolne, prosimy o kontakt telefoniczny.
-             </p>
-         </div>
-         <div className="flex-shrink-0 w-full md:w-auto mt-2 md:mt-0">
-            <a href={`tel:${EMERGENCY_PHONE.replace(/-/g, '')}`} className="flex items-center justify-center gap-2 bg-white border border-blue-200 hover:border-blue-300 text-blue-900 px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm whitespace-nowrap">
-                <Phone className="w-4 h-4" />
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 shadow-sm">
+         <div className="flex flex-col items-center">
+             {/* Icon */}
+             <div className="bg-blue-100 p-3 rounded-full mb-3">
+                 <Info className="w-6 h-6 text-blue-600" />
+             </div>
+             
+             {/* Title */}
+             <h3 className="text-lg font-bold text-blue-900 mb-3 text-center">
+                 Informacja o obsłudze zgłoszeń
+             </h3>
+
+             {/* Text Block */}
+             <div className="max-w-2xl text-blue-800 text-sm leading-relaxed text-justify mb-5">
+                 <p>
+                     Zgłoszenia wysyłane przez ten formularz są obsługiwane przez administratora w dni robocze w godzinach <strong>8:00 – 15:00</strong>. 
+                     W przypadku nagłych awarii poza tymi godzinami oraz w dni wolne, prosimy o kontakt telefoniczny z Konserwatorem Dyżurnym.
+                 </p>
+             </div>
+
+             {/* Phone Button */}
+             <a 
+                href={`tel:${EMERGENCY_PHONE.replace(/-/g, '')}`} 
+                className="flex items-center justify-center gap-3 bg-white border-2 border-blue-100 hover:border-blue-300 hover:bg-blue-50 text-blue-900 px-6 py-3 rounded-xl text-lg font-bold transition-all shadow-sm hover:shadow-md group"
+             >
+                <Phone className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 {EMERGENCY_PHONE}
-            </a>
+             </a>
          </div>
       </div>
 
