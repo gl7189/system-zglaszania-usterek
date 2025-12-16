@@ -3,7 +3,7 @@
 export const PRODUCTION_EMAIL = 'administrator5@zarzadca.wroclaw.pl';
 
 // Wersja aplikacji (wyświetlana w stopce)
-export const APP_VERSION = '1.2.2';
+export const APP_VERSION = '1.2.4';
 
 // Sprawdzamy środowisko Vercel używając zdefiniowanej stałej globalnej
 // Używamy typeof dla bezpieczeństwa, choć define w Vite powinno to obsłużyć
