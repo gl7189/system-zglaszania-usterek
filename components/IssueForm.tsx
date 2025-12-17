@@ -169,6 +169,43 @@ export const IssueForm: React.FC<any> = () => {
     setUploadedPhotoUrls(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
+  // Helper: Pobieranie informacji o systemie (User Agent, IP, Rozdzielczość)
+  const getSystemInfo = async (): Promise<string> => {
+    let ip = "Nieznane (Timeout/Block)";
+    
+    // Próba pobrania IP z darmowego API (timeout 1.5s żeby nie blokować formularza)
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+        
+        const res = await fetch('https://api.ipify.org?format=json', { 
+            signal: controller.signal 
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (res.ok) {
+            const data = await res.json();
+            ip = data.ip;
+        }
+    } catch (e) {
+        console.warn("Nie udało się pobrać IP:", e);
+    }
+
+    const nav = window.navigator;
+    const screen = window.screen;
+
+    return `
+    --- DANE TECHNICZNE (SYSTEM) ---
+    Data: ${new Date().toLocaleString('pl-PL')}
+    IP (weryfikacja): ${ip}
+    Urządzenie: ${nav.platform || 'Nieznane'}
+    Przeglądarka: ${nav.userAgent}
+    Język: ${nav.language}
+    Rozdzielczość: ${screen.width}x${screen.height}
+    `;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -190,7 +227,7 @@ export const IssueForm: React.FC<any> = () => {
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
-    // Przygotowanie sekcji ze zdjęciami do treści maila
+    // Przygotowanie sekcji ze zdjęciami
     let photosSection = "";
     if (uploadedPhotoUrls.length > 0) {
         photosSection = `\n\n--- ZAŁĄCZONE ZDJĘCIA (${uploadedPhotoUrls.length}) ---\n`;
@@ -199,16 +236,27 @@ export const IssueForm: React.FC<any> = () => {
         });
     }
 
-    const fullDescription = formState.description + photosSection;
+    // Pobranie danych technicznych (czekamy max 1.5s na IP)
+    const systemInfo = await getSystemInfo();
 
+    // Doklejenie zdjęć i danych technicznych do opisu
+    const fullDescription = formState.description + photosSection + "\n\n" + systemInfo;
+
+    // Przygotowanie parametrów dla EmailJS
+    // WAŻNE: W panelu EmailJS pole 'Reply To' musi być ustawione na {{reply_to}}
     const templateParams = {
         to_email: APP_CONFIG.receiverEmail,
+        
+        // Dane osoby zgłaszającej (do treści maila)
         senderName: formState.senderName,
-        from_name: formState.senderName,
-        name: formState.senderName,
         senderEmail: formState.senderEmail,
+        
+        // KLUCZOWE: To pole sprawia, że kliknięcie "Odpowiedz" w mailu kieruje do mieszkańca
         reply_to: formState.senderEmail,
-        from_email: formState.senderEmail,
+
+        // UWAGA: Nie ustawiamy 'from_email' na maila mieszkańca, aby uniknąć problemów z DMARC/Spamem.
+        // Mail przyjdzie "od serwisu", ale odpowiedź pójdzie do mieszkańca.
+
         location: formState.location,
         category: formState.category,
         urgency: formState.urgency,
