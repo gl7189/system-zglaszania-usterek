@@ -251,11 +251,16 @@ export const IssueForm: React.FC<any> = () => {
         senderName: formState.senderName,
         senderEmail: formState.senderEmail,
         
-        // KLUCZOWE: To pole sprawia, że kliknięcie "Odpowiedz" w mailu kieruje do mieszkańca
-        reply_to: formState.senderEmail,
+        // --- KLUCZOWA POPRAWKA ---
+        // Przywracamy zmienne, które są używane w szablonie treści (np. "Zgłaszający: {{from_email}}")
+        // Ponieważ zaznaczyłeś "Use Default Email Address" w panelu, te zmienne są bezpieczne
+        // i nie nadpiszą nagłówków technicznych (co chroni przed spamem), ale wyświetlą się w treści.
+        from_email: formState.senderEmail,
+        name: formState.senderName,
+        // -------------------------
 
-        // UWAGA: Nie ustawiamy 'from_email' na maila mieszkańca, aby uniknąć problemów z DMARC/Spamem.
-        // Mail przyjdzie "od serwisu", ale odpowiedź pójdzie do mieszkańca.
+        // To pole odpowiada za to, gdzie trafi odpowiedź po kliknięciu "Odpowiedz"
+        reply_to: formState.senderEmail,
 
         location: formState.location,
         category: formState.category,
