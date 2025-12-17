@@ -247,19 +247,22 @@ export const IssueForm: React.FC<any> = () => {
     const templateParams = {
         to_email: APP_CONFIG.receiverEmail,
         
-        // Dane osoby zgłaszającej (do treści maila)
+        // --- STRATEGIA KOMPATYBILNOŚCI ---
+        // Wysyłamy imię i email pod wieloma kluczami naraz, aby pasowało do każdego szablonu EmailJS.
+        // Niezależnie czy szablon używa {{name}}, {{from_name}} czy {{senderName}} - zadziała.
+        
+        // 1. Zmienne "Własne" (jeśli używasz w szablonie {{senderName}})
         senderName: formState.senderName,
         senderEmail: formState.senderEmail,
         
-        // --- KLUCZOWA POPRAWKA ---
-        // Przywracamy zmienne, które są używane w szablonie treści (np. "Zgłaszający: {{from_email}}")
-        // Ponieważ zaznaczyłeś "Use Default Email Address" w panelu, te zmienne są bezpieczne
-        // i nie nadpiszą nagłówków technicznych (co chroni przed spamem), ale wyświetlą się w treści.
-        from_email: formState.senderEmail,
+        // 2. Zmienne standardowe EmailJS (do nagłówków i często do treści)
+        from_name: formState.senderName,    // Często używane w treści: "Zgłaszający: {{from_name}}"
+        from_email: formState.senderEmail,  // Często używane w treści: "Email: {{from_email}}"
+        
+        // 3. Zmienne podstawowe (Header: From Name)
         name: formState.senderName,
-        // -------------------------
-
-        // To pole odpowiada za to, gdzie trafi odpowiedź po kliknięciu "Odpowiedz"
+        
+        // Reply To
         reply_to: formState.senderEmail,
 
         location: formState.location,
