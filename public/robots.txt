@@ -1,2 +1,15 @@
+# Allow Facebook, Messenger, and WhatsApp (Open Graph scrapers)
+User-agent: facebookexternalhit
+Allow: /
+
+# Allow Twitter/X
+User-agent: Twitterbot
+Allow: /
+
+# Allow LinkedIn
+User-agent: LinkedInBot
+Allow: /
+
+# Block generic crawlers (Google, Bing, Yahoo etc.)
 User-agent: *
 Disallow: /
