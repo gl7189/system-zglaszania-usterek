@@ -9,11 +9,16 @@ export default function App() {
         <div className="max-w-3xl mx-auto mb-8 text-center">
           
           {/* Logo Wspólnoty - teraz klikalne (resetuje stan/odświeża) */}
-          <a href="/" title="Strona główna" className="inline-block hover:opacity-90 transition-opacity">
+          {/* Zmiana: block zamiast inline-block dla stabilności CLS */}
+          <a href="/" title="Strona główna" className="block hover:opacity-90 transition-opacity w-fit mx-auto">
             <img 
               src="https://i.ibb.co/35dqrC0H/logo-as2632.png" 
               alt="Logo Wspólnoty - Aleja Śliwowa" 
-              className="h-24 mx-auto mb-6 object-contain" 
+              width={96}
+              height={96}
+              /* fetchPriority="high" mówi przeglądarce, żeby ładowała to priorytetowo (LCP fix) */
+              {...({ fetchPriority: "high" } as any)}
+              className="h-24 w-24 mx-auto mb-6 object-contain" 
             />
           </a>
 
