@@ -36,7 +36,7 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 py-6 mt-auto">
         <div className="max-w-3xl mx-auto px-4 text-center">
           <p className="text-sm text-slate-500">
-            &copy; 2025 Zarząd Wspólnoty Mieszkaniowej Aleja Śliwowa 26-32. Wszystkie prawa zastrzeżone.
+            &copy; 2026 Zarząd Wspólnoty Mieszkaniowej Aleja Śliwowa 26-32. Wszystkie prawa zastrzeżone.
           </p>
           <p className="text-xs text-slate-400 mt-2 font-mono">
             v{APP_VERSION}
